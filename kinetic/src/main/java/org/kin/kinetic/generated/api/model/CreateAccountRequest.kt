@@ -28,8 +28,7 @@ import com.squareup.moshi.Json
  * @param lastValidBlockHeight 
  * @param mint 
  * @param tx 
- * @param referenceId 
- * @param referenceType 
+ * @param reference 
  */
 
 data class CreateAccountRequest (
@@ -52,11 +51,8 @@ data class CreateAccountRequest (
     @Json(name = "tx")
     val tx: kotlin.String,
 
-    @Json(name = "referenceId")
-    val referenceId: kotlin.String? = null,
-
-    @Json(name = "referenceType")
-    val referenceType: kotlin.String? = null
+    @Json(name = "reference")
+    val reference: kotlin.String? = null
 
 )
 

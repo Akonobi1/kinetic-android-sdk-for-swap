@@ -35,8 +35,7 @@ import com.squareup.moshi.Json
  * @param ip 
  * @param mint 
  * @param processingDuration 
- * @param referenceId 
- * @param referenceType 
+ * @param reference 
  * @param signature 
  * @param solanaCommitted 
  * @param solanaCommittedDuration 
@@ -95,11 +94,8 @@ data class Transaction (
     @Json(name = "processingDuration")
     val processingDuration: kotlin.Int? = null,
 
-    @Json(name = "referenceId")
-    val referenceId: kotlin.String? = null,
-
-    @Json(name = "referenceType")
-    val referenceType: kotlin.String? = null,
+    @Json(name = "reference")
+    val reference: kotlin.String? = null,
 
     @Json(name = "signature")
     val signature: kotlin.String? = null,

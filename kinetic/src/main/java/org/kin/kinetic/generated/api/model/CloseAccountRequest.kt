@@ -27,8 +27,7 @@ import com.squareup.moshi.Json
  * @param environment 
  * @param index 
  * @param mint 
- * @param referenceId 
- * @param referenceType 
+ * @param reference 
  */
 
 data class CloseAccountRequest (
@@ -48,11 +47,8 @@ data class CloseAccountRequest (
     @Json(name = "mint")
     val mint: kotlin.String,
 
-    @Json(name = "referenceId")
-    val referenceId: kotlin.String? = null,
-
-    @Json(name = "referenceType")
-    val referenceType: kotlin.String? = null
+    @Json(name = "reference")
+    val reference: kotlin.String? = null
 
 )
 

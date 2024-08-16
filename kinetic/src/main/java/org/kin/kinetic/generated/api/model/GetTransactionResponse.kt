@@ -15,7 +15,7 @@
 
 package org.kin.kinetic.generated.api.model
 
-import org.kin.kinetic.generated.api.model.RpcResponseAndContext
+import org.kin.kinetic.generated.api.model.SignatureStatus
 import org.kin.kinetic.generated.api.model.TransactionResponse
 
 import com.squareup.moshi.Json
@@ -34,7 +34,7 @@ data class GetTransactionResponse (
     val signature: kotlin.String,
 
     @Json(name = "status")
-    val status: RpcResponseAndContext,
+    val status: SignatureStatus,
 
     @Json(name = "transaction")
     val transaction: TransactionResponse

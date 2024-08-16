@@ -41,15 +41,13 @@ class KineticSdk {
         account: String,
         commitment: Commitment? = null,
         mint: String? = null,
-        referenceId: String? = null,
-        referenceType: String? = null
+        reference: String? = null,
     ): Transaction {
         return internal.closeAccount(
             account,
             commitment,
             mint,
-            referenceId,
-            referenceType
+            reference,
         )
     }
 
@@ -57,15 +55,13 @@ class KineticSdk {
         owner: Keypair,
         commitment: Commitment? = null,
         mint: String? = null,
-        referenceId: String? = null,
-        referenceType: String? = null
+        reference: String? = null,
     ): Transaction {
         return internal.createAccount(
             owner,
             commitment,
             mint,
-            referenceId,
-            referenceType
+            reference,
         )
     }
 
@@ -99,8 +95,7 @@ class KineticSdk {
         owner: Keypair,
         commitment: Commitment? = null,
         mint: String? = null,
-        referenceId: String? = null,
-        referenceType: String? = null,
+        reference: String? = null,
         senderCreate: Boolean = false,
         type: KinBinaryMemo.TransactionType = KinBinaryMemo.TransactionType.None
     ): Transaction {
@@ -110,8 +105,7 @@ class KineticSdk {
             owner,
             commitment,
             mint,
-            referenceId,
-            referenceType,
+            reference,
             senderCreate,
             type
         )

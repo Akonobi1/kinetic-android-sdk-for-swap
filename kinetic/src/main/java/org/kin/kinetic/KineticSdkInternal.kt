@@ -47,8 +47,7 @@ class KineticSdkInternal(
         account: String,
         commitment: Commitment?,
         mint: String?,
-        referenceId: String?,
-        referenceType: String?,
+        reference: String?,
     ): Transaction {
         val appConfig = ensureAppConfig()
         var commitment = getCommitment(commitment)
@@ -60,8 +59,7 @@ class KineticSdkInternal(
             environment = sdkConfig.environment,
             index = sdkConfig.index,
             mint = mint.publicKey,
-            referenceId = referenceId,
-            referenceType = referenceType
+            reference = reference,
         )
 
         return withContext(dispatcher) {
@@ -74,8 +72,7 @@ class KineticSdkInternal(
         owner: Keypair,
         commitment: Commitment?,
         mint: String?,
-        referenceId: String?,
-        referenceType: String?,
+        reference: String?,
     ): Transaction {
         val appConfig = ensureAppConfig()
         val commitment = getCommitment(commitment)
@@ -106,8 +103,7 @@ class KineticSdkInternal(
             latestBlockhashResponse.lastValidBlockHeight,
             mint.publicKey,
             Base64.encodeToString(serialized, 0),
-            referenceId,
-            referenceType
+            reference
         )
 
         return withContext(dispatcher) {
@@ -149,7 +145,7 @@ class KineticSdkInternal(
         }
     }
 
-    suspend fun getTokenAccounts(account: String, commitment: Commitment?, mint: String?): List<String> {
+    suspend fun getTokenAccounts(account: String, commitment: Commitment?, mint: String?): List<String>? {
         val appConfig = ensureAppConfig()
         val commitment = getCommitment(commitment)
         val mint = getAppMint(appConfig, mint)
@@ -173,8 +169,7 @@ class KineticSdkInternal(
         owner: Keypair,
         commitment: Commitment?,
         mint: String?,
-        referenceId: String?,
-        referenceType: String?,
+        reference: String?,
         senderCreate: Boolean,
         type: KinBinaryMemo.TransactionType,
     ): Transaction {
@@ -228,8 +223,7 @@ class KineticSdkInternal(
             mint.publicKey,
             latestBlockhashResponse.lastValidBlockHeight,
             Base64.encodeToString(serialized, 0),
-            referenceId,
-            referenceType
+            reference,
         )
 
         return withContext(dispatcher) {
