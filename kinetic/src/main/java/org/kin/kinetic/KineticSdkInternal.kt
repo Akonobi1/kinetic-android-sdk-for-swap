@@ -145,7 +145,7 @@ class KineticSdkInternal(
         }
     }
 
-    suspend fun getTokenAccounts(account: String, commitment: Commitment?, mint: String?): List<String>? {
+    suspend fun getTokenAccounts(account: String, commitment: Commitment?, mint: String?): List<String> {
         val appConfig = ensureAppConfig()
         val commitment = getCommitment(commitment)
         val mint = getAppMint(appConfig, mint)
