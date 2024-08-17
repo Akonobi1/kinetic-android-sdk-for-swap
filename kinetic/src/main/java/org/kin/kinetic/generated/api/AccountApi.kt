@@ -466,7 +466,10 @@ class AccountApi(basePath: kotlin.String = defaultBasePath, client: OkHttpClient
         val localVarResponse = getTokenAccountsWithHttpInfo(environment = environment, index = index, accountId = accountId, mint = mint, commitment = commitment)
 
         return when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.List<kotlin.String>
+            ResponseType.Success -> {
+                val data = (localVarResponse as Success<*>).data as? kotlin.collections.List<kotlin.String>
+                data ?: emptyList() // Return an empty list if data is null
+            }
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
