@@ -1,5 +1,6 @@
 package org.kin.kinetic.generated.infrastructure
 
+import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -28,10 +29,13 @@ import java.time.OffsetDateTime
 import java.time.OffsetTime
 import java.util.Locale
 import com.squareup.moshi.adapter
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.util.concurrent.TimeUnit
 
 open class ApiClient(val baseUrl: String, val client: OkHttpClient = defaultClient, val headers: Map<String, String> = mapOf()) {
     companion object {
+        private const val TAG = "ApiClient"
         protected const val ContentType = "Content-Type"
         protected const val Accept = "Accept"
         protected const val Authorization = "Authorization"
@@ -59,6 +63,31 @@ open class ApiClient(val baseUrl: String, val client: OkHttpClient = defaultClie
             .readTimeout(1, TimeUnit.MINUTES)
             .callTimeout(1, TimeUnit.MINUTES)
     }
+
+    fun handleWebSocketRequest(request: Request) {
+        val webSocketListener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                Log.d(TAG,"WebSocket connection opened: ${request.url}")
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                Log.d(TAG,"WebSocket message received: $text")
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Log.d(TAG,"WebSocket error: ${t.message}")
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.d(TAG,"WebSocket closed: $reason")
+            }
+        }
+
+        // Initiate the WebSocket connection using the constructed request
+        client.newWebSocket(request, webSocketListener)
+        client.dispatcher.executorService.shutdown()  // Optionally shut down the dispatcher
+    }
+
 
     /**
      * Guess Content-Type header from the given file (defaults to "application/octet-stream").
@@ -185,7 +214,8 @@ open class ApiClient(val baseUrl: String, val client: OkHttpClient = defaultClie
             null
         }
 
-        val request = when (requestConfig.method) {
+        // Prepare request builder with headers
+        val requestBuilder = when (requestConfig.method) {
             RequestMethod.DELETE -> Request.Builder().url(url).delete(requestBody(requestConfig.body, contentType))
             RequestMethod.GET -> Request.Builder().url(url)
             RequestMethod.HEAD -> Request.Builder().url(url).head()
@@ -195,7 +225,17 @@ open class ApiClient(val baseUrl: String, val client: OkHttpClient = defaultClie
             RequestMethod.OPTIONS -> Request.Builder().url(url).method("OPTIONS", null)
         }.apply {
             headers.forEach { header -> addHeader(header.key, header.value) }
-        }.build()
+        }
+
+        val request = requestBuilder.build()
+
+
+        // Handle WebSocket URL separately
+        if (url.toString().startsWith("wss://")) {
+            handleWebSocketRequest(request)  // Pass the fully constructed request to WebSocket
+            return Success(null, 101, emptyMap())  // Return WebSocket success response
+        }
+
 
         val response = client.newCall(request).execute()
 
