@@ -16,12 +16,12 @@ fun getSolanaRPCEndpoint(endpoint: String): RPCEndpoint {
 
             // Use URI for validation since it supports wss://
             val httpEndpoint = URL(endpoint) // This works fine for http/https
-            val webSocketURI = URI(webSocketString) // Validate the wss:// using URI
+           // val webSocketURI = URI(webSocketString) // Validate the wss:// using URI
 
             // Convert the WebSocket URI back to a URL (if needed) while bypassing URL checks
-            val webSocketURL = URL(webSocketURI.toString())
+            // val webSocketURL = webSocketURI.toURL()
 
-            return RPCEndpoint.custom(httpEndpoint, webSocketURL, Network.mainnetBeta)
+            return RPCEndpoint.custom(httpEndpoint, httpEndpoint, Network.mainnetBeta)
         }
     }
 }
