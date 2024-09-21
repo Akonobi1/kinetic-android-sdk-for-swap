@@ -145,6 +145,32 @@
             android:layout_height="wrap_content"
             android:textAlignment="center"
             android:textSize="9sp" />
+
+        <Button
+            android:id="@+id/backup_account_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Backup Account" />
+
+        <TextView
+            android:id="@+id/backup_account_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAlignment="center"
+            android:textSize="9sp" />
+
+        <Button
+            android:id="@+id/generate_mnemonic_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Generate Mnemonic" />
+
+        <TextView
+            android:id="@+id/generate_mnemonic_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAlignment="center"
+            android:textSize="9sp" />
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
