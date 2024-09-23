@@ -5,11 +5,10 @@ import com.solana.core.HotAccount
 import com.solana.vendor.TweetNaclFast
 import com.solana.vendor.bip32.wallet.DerivableType
 import com.solana.vendor.bip32.wallet.SolanaBip44
+import com.solana.vendor.bip39.Mnemonic
+import com.solana.vendor.bip39.WordCount
 import org.bitcoinj.core.Base58
-import org.bitcoinj.core.NetworkParameters
 import org.bitcoinj.crypto.MnemonicCode
-import org.bitcoinj.script.Script
-import org.bitcoinj.wallet.Wallet
 
 class Keypair {
     private var keyPair: TweetNaclFast.Signature.KeyPair
@@ -85,9 +84,7 @@ class Keypair {
 
         // TODO: Implement the 'strength: 128|256' parameter that generates a 12 or 24 word mnemonic
         fun generateMnemonic(): List<String> {
-            val networkParameters = NetworkParameters.fromID("org.bitcoin.production")
-            // TODO: find alternative for the underlying deprecated Wallet method
-            return Wallet(networkParameters).keyChainSeed.mnemonicCode!!
+            return Mnemonic(WordCount.COUNT_12).phrase
         }
 
         fun fromJson(json: String): Keypair {

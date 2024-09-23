@@ -10,17 +10,22 @@ import org.kin.kinetic.KineticSdk
 import org.kin.kinetic.LogLevel
 import kotlinx.coroutines.*
 import org.kin.kinetic.KineticSdkConfig
+import org.w3c.dom.Text
 
 class MainActivity : AppCompatActivity() {
     private lateinit var accountHistoryText: TextView
     private lateinit var airdropButton: Button
     private lateinit var airdropText: TextView
+    private lateinit var backupAccountButton: Button
+    private lateinit var backupAccountText: TextView
     private lateinit var closeAccountButton: Button
     private lateinit var closeAccountText: TextView
     private lateinit var createAccountButton: Button
     private lateinit var createAccountText: TextView
     private lateinit var getAccountHistoryButton: Button
     private lateinit var getAccountInfoButton: Button
+    private lateinit var generateMnemonicButton: Button
+    private lateinit var generateMnemonicText: TextView
     private lateinit var getBalanceButton: Button
     private lateinit var getConfigButton: Button
     private lateinit var getTokenAccountsButton: Button
@@ -47,9 +52,9 @@ class MainActivity : AppCompatActivity() {
         kineticNetworkScope.launch {
             kinetic = KineticSdk.setup(
                 KineticSdkConfig(
-                    "https://sandbox.kinetic.host",
-                    "devnet",
-                    1,
+                    "https://app.altude.so",
+                    "mainnet",
+                    134,
                     mapOf("kinetic-custom-header" to "Yay nice!"),
                 )
             )
@@ -70,6 +75,8 @@ class MainActivity : AppCompatActivity() {
         accountHistoryText = findViewById(R.id.account_history_text)
         airdropButton = findViewById(R.id.airdrop_button)
         airdropText = findViewById(R.id.airdrop_text)
+        backupAccountButton = findViewById(R.id.backup_account_button)
+        backupAccountText = findViewById(R.id.backup_account_text)
         closeAccountButton = findViewById(R.id.close_account_button)
         closeAccountText = findViewById(R.id.close_account_text)
         createAccountButton = findViewById(R.id.create_account_button)
@@ -80,6 +87,8 @@ class MainActivity : AppCompatActivity() {
         getConfigButton = findViewById(R.id.get_config_button)
         getTokenAccountsButton = findViewById(R.id.get_token_accounts_button)
         getTransactionButton = findViewById(R.id.get_transaction_button)
+        generateMnemonicButton = findViewById(R.id.generate_mnemonic_button)
+        generateMnemonicText = findViewById(R.id.generate_mnemonic_text)
         kinAccountInfoText = findViewById(R.id.kin_account_info_text)
         kinBalanceText = findViewById(R.id.kin_balance_text)
         makeTransferButton = findViewById(R.id.make_transfer_button)
@@ -87,6 +96,18 @@ class MainActivity : AppCompatActivity() {
         serverConfigText = findViewById(R.id.server_config_text)
         tokenAccountsText = findViewById(R.id.token_accounts_text)
         transactionText = findViewById(R.id.transaction_text)
+
+        backupAccountButton.setOnClickListener {
+            kineticNetworkScope.launch {
+                val accountJson = account?.toJson()
+                if (accountJson != null) {
+                    Log.d("StoredAccount", accountJson)
+                }
+
+                val res = account?.mnemonic ?: account?.secretKey
+                runOnUiThread { backupAccountText.text = res.toString() }
+            }
+        }
 
         getConfigButton.setOnClickListener {
             kineticNetworkScope.launch {
@@ -120,6 +141,13 @@ class MainActivity : AppCompatActivity() {
             kineticNetworkScope.launch {
                 val res = kinetic?.getHistory(account!!.publicKey)
                 runOnUiThread { accountHistoryText.text = res.toString() }
+            }
+        }
+
+        generateMnemonicButton.setOnClickListener {
+            kineticNetworkScope.launch {
+                val res = Keypair.random().mnemonic
+                runOnUiThread { generateMnemonicText.text = res.toString() }
             }
         }
 
