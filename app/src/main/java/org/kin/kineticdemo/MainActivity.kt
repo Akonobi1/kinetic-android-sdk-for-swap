@@ -10,7 +10,7 @@ import org.kin.kinetic.KineticSdk
 import org.kin.kinetic.LogLevel
 import kotlinx.coroutines.*
 import org.kin.kinetic.KineticSdkConfig
-import org.w3c.dom.Text
+import org.kin.kinetic.jupiter.BasicAccountStorage
 
 class MainActivity : AppCompatActivity() {
     private lateinit var accountHistoryText: TextView

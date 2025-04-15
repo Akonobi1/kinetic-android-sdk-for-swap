@@ -5,6 +5,7 @@ import org.kin.kinetic.helpers.generateCreateAccountTransaction
 import org.kin.kinetic.helpers.generateMakeTransferTransaction
 import com.solana.Solana
 import com.solana.core.*
+import com.solana.solana.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
@@ -40,7 +41,7 @@ class KineticSdkInternal(
         transactionApi = TransactionApi(basePath = sdkConfig.endpoint, headers = apiHeaders)
         appApi = AppApi(basePath = sdkConfig.endpoint, headers = apiHeaders)
 
-        log(LogLevel.INFO, "Initializing ${BuildConfig.LIBRARY_NAME}@${BuildConfig.LIBRARY_VERSION}\nendpoint: ${sdkConfig.endpoint}, environment: ${sdkConfig.environment}, index: ${sdkConfig.index}")
+        log(LogLevel.INFO, "Initializing ${BuildConfig.LIBRARY_PACKAGE_NAME}@${BuildConfig.BUILD_TYPE}\nendpoint: ${sdkConfig.endpoint}, environment: ${sdkConfig.environment}, index: ${sdkConfig.index}")
     }
 
     suspend fun closeAccount(
@@ -263,7 +264,7 @@ class KineticSdkInternal(
         return headers + mapOf(
             Pair("kinetic-environment", sdkConfig.environment),
             Pair("kinetic-index", sdkConfig.index.toString()),
-            Pair("kinetic-user-agent", "${BuildConfig.LIBRARY_NAME}@${BuildConfig.LIBRARY_VERSION}")
+            Pair("kinetic-user-agent", "${BuildConfig.LIBRARY_PACKAGE_NAME}@${BuildConfig.BUILD_TYPE}")
         )
     }
 
@@ -302,6 +303,6 @@ class KineticSdkInternal(
     }
 
     private fun log(level: LogLevel, message: String) {
-        logger.update { Pair(level, "${BuildConfig.LIBRARY_NAME}::${Instant.now()}::${message}") }
+        logger.update { Pair(level, "${BuildConfig.LIBRARY_PACKAGE_NAME}::${Instant.now()}::${message}") }
     }
 }

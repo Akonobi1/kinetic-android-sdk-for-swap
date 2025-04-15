@@ -1,8 +1,7 @@
-package org.kin.kineticdemo
+package org.kin.kinetic.jupiter
 
 import android.util.Log
 import org.kin.kinetic.Keypair
-import org.kin.kinetic.jupiter.BasicAccountStorage
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
