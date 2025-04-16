@@ -3,7 +3,7 @@
 
     <application>
         <activity
-            android:name=".examples.SwapActivity"
+            android:name="org.kin.kineticdemo.SwapActivity"
             android:exported="false" />
     </application>
 

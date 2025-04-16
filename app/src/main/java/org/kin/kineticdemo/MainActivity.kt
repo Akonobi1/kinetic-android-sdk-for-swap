@@ -1,5 +1,6 @@
 package org.kin.kineticdemo
 
+import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
@@ -11,6 +12,8 @@ import org.kin.kinetic.LogLevel
 import kotlinx.coroutines.*
 import org.kin.kinetic.KineticSdkConfig
 import org.kin.kinetic.jupiter.BasicAccountStorage
+
+
 
 class MainActivity : AppCompatActivity() {
     private lateinit var accountHistoryText: TextView
@@ -34,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var kinBalanceText: TextView
     private lateinit var makeTransferButton: Button
     private lateinit var makeTransferText: TextView
+    private lateinit var openSwapActivityButton: Button
     private lateinit var serverConfigText: TextView
     private lateinit var tokenAccountsText: TextView
     private lateinit var transactionText: TextView
@@ -72,6 +76,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Initialize UI elements
+        initializeUiElements()
+
+        // Setup button click listeners
+        setupButtonClickListeners()
+    }
+
+    private fun initializeUiElements() {
         accountHistoryText = findViewById(R.id.account_history_text)
         airdropButton = findViewById(R.id.airdrop_button)
         airdropText = findViewById(R.id.airdrop_text)
@@ -93,9 +105,18 @@ class MainActivity : AppCompatActivity() {
         kinBalanceText = findViewById(R.id.kin_balance_text)
         makeTransferButton = findViewById(R.id.make_transfer_button)
         makeTransferText = findViewById(R.id.make_transfer_text)
+        openSwapActivityButton = findViewById(R.id.open_swap_activity_button)
         serverConfigText = findViewById(R.id.server_config_text)
         tokenAccountsText = findViewById(R.id.token_accounts_text)
         transactionText = findViewById(R.id.transaction_text)
+    }
+
+    private fun setupButtonClickListeners() {
+        // New button to open the Swap Activity
+        openSwapActivityButton.setOnClickListener {
+            val intent = Intent(this, SwapActivity::class.java)
+            startActivity(intent)
+        }
 
         backupAccountButton.setOnClickListener {
             kineticNetworkScope.launch {
