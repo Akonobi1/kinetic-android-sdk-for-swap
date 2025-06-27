@@ -5,7 +5,6 @@ import org.kin.kinetic.helpers.generateCreateAccountTransaction
 import org.kin.kinetic.helpers.generateMakeTransferTransaction
 import com.solana.Solana
 import com.solana.core.*
-import com.solana.solana.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
@@ -41,7 +40,7 @@ class KineticSdkInternal(
         transactionApi = TransactionApi(basePath = sdkConfig.endpoint, headers = apiHeaders)
         appApi = AppApi(basePath = sdkConfig.endpoint, headers = apiHeaders)
 
-        log(LogLevel.INFO, "Initializing ${BuildConfig.LIBRARY_PACKAGE_NAME}@${BuildConfig.BUILD_TYPE}\nendpoint: ${sdkConfig.endpoint}, environment: ${sdkConfig.environment}, index: ${sdkConfig.index}")
+        log(LogLevel.INFO, "Initializing Kinetic Android SDK\nendpoint: ${sdkConfig.endpoint}, environment: ${sdkConfig.environment}, index: ${sdkConfig.index}")
     }
 
     suspend fun closeAccount(
@@ -67,7 +66,6 @@ class KineticSdkInternal(
             accountApi.closeAccount(closeAccountRequest)
         }
     }
-
 
     suspend fun createAccount(
         owner: Keypair,
@@ -173,6 +171,8 @@ class KineticSdkInternal(
         reference: String?,
         senderCreate: Boolean,
         type: KinBinaryMemo.TransactionType,
+        isVersioned: Boolean = false,
+        addressLookupTableAccounts: List<String>? = null,
     ): Transaction {
         val appConfig = ensureAppConfig()
         val commitment = getCommitment(commitment)
@@ -199,6 +199,11 @@ class KineticSdkInternal(
         val latestBlockhashResponseJob = this@KineticSdkInternal.getBlockhash()
         val latestBlockhashResponse = latestBlockhashResponseJob
 
+        // Validate versioned transaction parameters
+        if (isVersioned && addressLookupTableAccounts.isNullOrEmpty()) {
+            log(LogLevel.WARNING, "Versioned transaction requested but no address lookup tables provided")
+        }
+
         val tx = generateMakeTransferTransaction(
             mint.addMemo,
             amount,
@@ -215,16 +220,22 @@ class KineticSdkInternal(
             type
         )
 
+        if (isVersioned) {
+            log(LogLevel.INFO, "Versioned transaction requested - using standard serialization")
+        }
+
         val serialized = tx.serialize(SerializeConfig(requireAllSignatures = false, verifySignatures = false))
 
         val makeTransferRequest = MakeTransferRequest(
-            commitment,
-            sdkConfig.environment,
-            sdkConfig.index,
-            mint.publicKey,
-            latestBlockhashResponse.lastValidBlockHeight,
-            Base64.encodeToString(serialized, 0),
-            reference,
+            commitment = commitment,
+            environment = sdkConfig.environment,
+            index = sdkConfig.index,
+            mint = mint.publicKey,
+            lastValidBlockHeight = latestBlockhashResponse.lastValidBlockHeight,
+            tx = Base64.encodeToString(serialized, 0),
+            reference = reference,
+            isVersioned = isVersioned,
+            addressLookupTableAccounts = addressLookupTableAccounts
         )
 
         return withContext(dispatcher) {
@@ -264,7 +275,7 @@ class KineticSdkInternal(
         return headers + mapOf(
             Pair("kinetic-environment", sdkConfig.environment),
             Pair("kinetic-index", sdkConfig.index.toString()),
-            Pair("kinetic-user-agent", "${BuildConfig.LIBRARY_PACKAGE_NAME}@${BuildConfig.BUILD_TYPE}")
+            Pair("kinetic-user-agent", "Kinetic-Android-SDK")
         )
     }
 
@@ -303,6 +314,6 @@ class KineticSdkInternal(
     }
 
     private fun log(level: LogLevel, message: String) {
-        logger.update { Pair(level, "${BuildConfig.LIBRARY_PACKAGE_NAME}::${Instant.now()}::${message}") }
+        logger.update { Pair(level, "Kinetic-Android-SDK::${Instant.now()}::${message}") }
     }
 }
