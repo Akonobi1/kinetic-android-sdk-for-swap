@@ -1250,6 +1250,19 @@
           },
           "tx": {
             "type": "string"
+          },
+          "isVersioned": {
+            "type": "boolean",
+            "default": false,
+            "description": "Indicates if this is a versioned transaction"
+          },
+          "addressLookupTableAccounts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Base58-encoded addresses of lookup tables required for versioned transactions"
           }
         },
         "required": ["commitment", "environment", "index", "mint", "lastValidBlockHeight", "tx"]
