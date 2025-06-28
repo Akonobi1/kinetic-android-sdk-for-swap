@@ -50,15 +50,15 @@ class KineticSdkInternal(
         reference: String?,
     ): Transaction {
         val appConfig = ensureAppConfig()
-        var commitment = getCommitment(commitment)
-        val mint = getAppMint(appConfig, mint)
+        val resolvedCommitment = getCommitment(commitment)
+        val resolvedMint = getAppMint(appConfig, mint)
 
         val closeAccountRequest = CloseAccountRequest(
             account = account,
-            commitment = commitment,
+            commitment = resolvedCommitment,
             environment = sdkConfig.environment,
             index = sdkConfig.index,
-            mint = mint.publicKey,
+            mint = resolvedMint.publicKey,
             reference = reference,
         )
 
@@ -74,10 +74,10 @@ class KineticSdkInternal(
         reference: String?,
     ): Transaction {
         val appConfig = ensureAppConfig()
-        val commitment = getCommitment(commitment)
-        val mint = getAppMint(appConfig, mint)
+        val resolvedCommitment = getCommitment(commitment)
+        val resolvedMint = getAppMint(appConfig, mint)
 
-        val accounts = this@KineticSdkInternal.getTokenAccounts(owner.publicKey, commitment, mint.publicKey)
+        val accounts = this@KineticSdkInternal.getTokenAccounts(owner.publicKey, resolvedCommitment, resolvedMint.publicKey)
         if (!accounts.isEmpty()) {
             error("Token account already exists")
         }
@@ -85,22 +85,22 @@ class KineticSdkInternal(
         val latestBlockhashResponse = this.getBlockhash()
 
         val tx = generateCreateAccountTransaction(
-            mint.addMemo,
+            resolvedMint.addMemo,
             latestBlockhashResponse.blockhash,
             sdkConfig.index,
-            mint.feePayer,
-            mint.publicKey,
+            resolvedMint.feePayer,
+            resolvedMint.publicKey,
             owner.solana
         )
 
         val serialized = tx.serialize(SerializeConfig(requireAllSignatures = false, verifySignatures = false))
 
         val createAccountRequest = CreateAccountRequest(
-            commitment,
+            resolvedCommitment,
             sdkConfig.environment,
             sdkConfig.index,
             latestBlockhashResponse.lastValidBlockHeight,
-            mint.publicKey,
+            resolvedMint.publicKey,
             Base64.encodeToString(serialized, 0),
             reference
         )
@@ -112,11 +112,11 @@ class KineticSdkInternal(
 
     suspend fun getAccountInfo(account: String, commitment: Commitment?, mint: String?): AccountInfo {
         val appConfig = ensureAppConfig()
-        val commitment = getCommitment(commitment)
-        val mint = getAppMint(appConfig, mint)
+        val resolvedCommitment = getCommitment(commitment)
+        val resolvedMint = getAppMint(appConfig, mint)
 
         return withContext(dispatcher) {
-            accountApi.getAccountInfo(sdkConfig.environment, sdkConfig.index, account, mint.publicKey, commitment)
+            accountApi.getAccountInfo(sdkConfig.environment, sdkConfig.index, account, resolvedMint.publicKey, resolvedCommitment)
         }
     }
 
@@ -127,38 +127,38 @@ class KineticSdkInternal(
     }
 
     suspend fun getBalance(account: String, commitment: Commitment?): BalanceResponse {
-        val commitment = getCommitment(commitment)
+        val resolvedCommitment = getCommitment(commitment)
 
         return withContext(dispatcher) {
-            accountApi.getBalance(sdkConfig.environment, sdkConfig.index, account, commitment)
+            accountApi.getBalance(sdkConfig.environment, sdkConfig.index, account, resolvedCommitment)
         }
     }
 
     suspend fun getHistory(account: String, commitment: Commitment?, mint: String?): List<HistoryResponse> {
         val appConfig = ensureAppConfig()
-        val commitment = getCommitment(commitment)
-        val mint = getAppMint(appConfig, mint)
+        val resolvedCommitment = getCommitment(commitment)
+        val resolvedMint = getAppMint(appConfig, mint)
 
         return withContext(dispatcher) {
-            accountApi.getHistory(sdkConfig.environment, sdkConfig.index, account, mint.publicKey, commitment)
+            accountApi.getHistory(sdkConfig.environment, sdkConfig.index, account, resolvedMint.publicKey, resolvedCommitment)
         }
     }
 
     suspend fun getTokenAccounts(account: String, commitment: Commitment?, mint: String?): List<String> {
         val appConfig = ensureAppConfig()
-        val commitment = getCommitment(commitment)
-        val mint = getAppMint(appConfig, mint)
+        val resolvedCommitment = getCommitment(commitment)
+        val resolvedMint = getAppMint(appConfig, mint)
 
         return withContext(dispatcher) {
-            accountApi.getTokenAccounts(sdkConfig.environment, sdkConfig.index, account, mint.publicKey, commitment)
+            accountApi.getTokenAccounts(sdkConfig.environment, sdkConfig.index, account, resolvedMint.publicKey, resolvedCommitment)
         }
     }
 
     suspend fun getTransaction(signature: String, commitment: Commitment?): GetTransactionResponse {
-        val commitment = getCommitment(commitment)
+        val resolvedCommitment = getCommitment(commitment)
 
         return withContext(dispatcher) {
-            transactionApi.getTransaction(sdkConfig.environment, sdkConfig.index, signature, commitment)
+            transactionApi.getTransaction(sdkConfig.environment, sdkConfig.index, signature, resolvedCommitment)
         }
     }
 
@@ -175,21 +175,21 @@ class KineticSdkInternal(
         addressLookupTableAccounts: List<String>? = null,
     ): Transaction {
         val appConfig = ensureAppConfig()
-        val commitment = getCommitment(commitment)
-        val mint = getAppMint(appConfig, mint)
-        val amount = addDecimals(amount, mint.decimals).toString()
+        val resolvedCommitment = getCommitment(commitment)
+        val resolvedMint = getAppMint(appConfig, mint)
+        val processedAmount = addDecimals(amount, resolvedMint.decimals).toString()
 
-        val ownerTokenAccount = this.findTokenAccount(owner.publicKey, commitment, mint.publicKey)
-            ?: error("Owner account doesn't exist for mint ${mint.publicKey}")
-        var destinationTokenAccount = this.findTokenAccount(destination, commitment, mint.publicKey)
+        val ownerTokenAccount = this.findTokenAccount(owner.publicKey, resolvedCommitment, resolvedMint.publicKey)
+            ?: error("Owner account doesn't exist for mint ${resolvedMint.publicKey}")
+        var destinationTokenAccount = this.findTokenAccount(destination, resolvedCommitment, resolvedMint.publicKey)
 
         if (destinationTokenAccount == null && !senderCreate) {
-            error("Destination account doesn't exist for mint ${mint.publicKey}")
+            error("Destination account doesn't exist for mint ${resolvedMint.publicKey}")
         }
 
         var senderCreateTokenAccount: String? = null
         if (destinationTokenAccount == null && senderCreate) {
-            senderCreateTokenAccount = getTokenAddress(destination, mint.publicKey)
+            senderCreateTokenAccount = getTokenAddress(destination, resolvedMint.publicKey)
         }
 
         if (destinationTokenAccount == null && senderCreateTokenAccount == null) {
@@ -205,15 +205,15 @@ class KineticSdkInternal(
         }
 
         val tx = generateMakeTransferTransaction(
-            mint.addMemo,
-            amount,
+            resolvedMint.addMemo,
+            processedAmount,
             latestBlockhashResponse.blockhash,
             destination,
             destinationTokenAccount ?: senderCreateTokenAccount!!,
             sdkConfig.index,
-            mint.decimals,
-            mint.feePayer,
-            mint.publicKey,
+            resolvedMint.decimals,
+            resolvedMint.feePayer,
+            resolvedMint.publicKey,
             owner.solana,
             ownerTokenAccount,
             senderCreateTokenAccount != null && senderCreate,
