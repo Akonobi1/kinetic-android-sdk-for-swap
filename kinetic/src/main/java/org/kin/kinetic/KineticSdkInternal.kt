@@ -431,7 +431,7 @@ export class KineticSdkInternal {
   }
 
   // =========================================================================
-  // NEW METHODS - PURELY ADDITIVE
+  // NEW METHODS - PURELY ADDITIVE WITH ENHANCED VERSIONED SUPPORT
   // =========================================================================
 
   /**
