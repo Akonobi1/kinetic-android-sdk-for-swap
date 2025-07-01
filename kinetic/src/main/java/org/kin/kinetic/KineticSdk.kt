@@ -20,7 +20,7 @@ class KineticSdk {
     ) {
         this.sdkConfig = sdkConfig
         this.internal = KineticSdkInternal(sdkConfig)
-        this.logger = this.internal.logger.asStateFlow()
+        this.logger = this.internal.logger
     }
 
     var config: AppConfig? = null
