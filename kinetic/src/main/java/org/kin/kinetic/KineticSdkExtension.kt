@@ -137,6 +137,7 @@ suspend fun KineticSdk.submitVersionedTransaction(
 
     Log.d("KineticVersioned", "Submitting transaction (attempting type detection)")
     Log.d("KineticVersioned", "Transaction size: ${serializedTransaction.length} chars")
+    Log.d("KineticVersioned", "Owner: ${owner.publicKey}")
 
     // Attempt transaction type detection using official Solana SDK
     val (finalTransaction, isActuallyVersioned) = try {

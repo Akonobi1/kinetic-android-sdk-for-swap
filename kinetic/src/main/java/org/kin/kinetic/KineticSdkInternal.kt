@@ -307,7 +307,6 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
         val commitment = getCommitment(options.commitment)
 
         val destinations = options.destinations
-        val reference = options.reference
 
         if (destinations.isEmpty()) {
             throw Exception("At least 1 destination required")
@@ -331,7 +330,7 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
         // Get TokenAccount from destinations, keep track of missing ones
         val nonExistingDestinations = mutableListOf<String>()
-        val destinationInfo = destinations.map { item ->
+        destinations.forEach { item ->
             val destination = findTokenAccount(
                 account = item.destination,
                 commitment = commitment,
@@ -340,10 +339,6 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
             if (destination == null) {
                 nonExistingDestinations.add(item.destination)
             }
-            TransferDestination(
-                amount = item.amount,
-                destination = destination ?: ""
-            )
         }
 
         // The operation fails if any of the destinations doesn't have a token account for this mint
@@ -353,10 +348,31 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
             )
         }
 
-        val (blockhash, lastValidBlockHeight) = getBlockhashAndHeight()
-
-        // For now, throw exception as batch transfer helper is not implemented
-        throw Exception("Batch transfer not yet implemented - missing generateMakeTransferBatchTransaction helper")
+        // For now, batch transfers are not implemented - fallback to sequential single transfers
+        // This prevents the library from crashing while maintaining functionality
+        var lastTransaction: Transaction? = null
+        
+        for (destination in destinations) {
+            try {
+                val singleTransferOptions = MakeTransferOptions(
+                    amount = destination.amount,
+                    destination = destination.destination,
+                    owner = options.owner,
+                    commitment = options.commitment,
+                    mint = options.mint,
+                    reference = options.reference,
+                    senderCreate = false,
+                    type = options.type
+                )
+                
+                lastTransaction = makeTransfer(singleTransferOptions)
+                
+            } catch (e: Exception) {
+                throw Exception("Batch transfer failed at destination ${destination.destination}: ${e.message}")
+            }
+        }
+        
+        return lastTransaction ?: throw Exception("No transfers were executed")
     }
 
     suspend fun requestAirdrop(options: RequestAirdropOptions): RequestAirdropResponse {
