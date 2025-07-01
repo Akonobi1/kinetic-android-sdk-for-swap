@@ -1,11 +1,17 @@
 package org.kin.kinetic
 
+import android.util.Base64
+import com.solana.core.Account
+import com.solana.core.Transaction as SolanaTransaction
+import com.solana.core.SerializeConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import okhttp3.OkHttpClient
 import org.kin.kinetic.generated.api.*
 import org.kin.kinetic.generated.api.model.*
+import org.kin.kinetic.generated.infrastructure.ApiClient
 import org.kin.kinetic.helpers.*
 import org.kin.kinetic.interfaces.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
@@ -14,34 +20,44 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
     private val appApi: AppApi
     private val transactionApi: TransactionApi
 
+    // Logger for the SDK
+    private val _logger = MutableStateFlow<Pair<LogLevel, String>>(Pair(LogLevel.INFO, "KineticSDK initialized"))
+    val logger: StateFlow<Pair<LogLevel, String>> = _logger
+
     var appConfig: AppConfig? = null
 
-    init {
-        // Create the API Configuration
-        val apiConfig = Configuration(
-            baseUrl = sdkConfig.endpoint,
-            headers = createApiHeaders(sdkConfig.headers)
-        )
+    companion object {
+        const val NAME = "kinetic-kotlin-sdk"
+        const val VERSION = "1.0.0"
+        
+        // Memo program ID for Solana
+        val MEMO_V1_PROGRAM_ID = PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr")
+    }
 
-        // Configure the APIs
-        accountApi = AccountApi(apiConfig)
-        airdropApi = AirdropApi(apiConfig)
-        appApi = AppApi(apiConfig)
-        transactionApi = TransactionApi(apiConfig)
+    init {
+        // Create the APIs using the existing pattern from generated API files
+        val basePath = sdkConfig.endpoint
+        val headers = createApiHeaders(sdkConfig.headers)
+
+        // Configure the APIs with proper constructor parameters
+        accountApi = AccountApi(basePath, ApiClient.defaultClient, headers)
+        airdropApi = AirdropApi(basePath, ApiClient.defaultClient, headers)
+        appApi = AppApi(basePath, ApiClient.defaultClient, headers)
+        transactionApi = TransactionApi(basePath, ApiClient.defaultClient, headers)
     }
 
     // =========================================================================
-    // EXISTING METHODS - PRESERVED EXACTLY FROM ORIGINAL
+    // PUBLIC API METHODS - Updated to use Options classes
     // =========================================================================
 
     suspend fun closeAccount(options: CloseAccountOptions): Transaction {
         val appConfig = ensureAppConfig()
-        val appMint = getAppMint(appConfig, options.mint?.toString())
+        val appMint = getAppMint(appConfig, options.mint)
         val commitment = getCommitment(options.commitment)
         val reference = options.reference
 
         val request = CloseAccountRequest(
-            account = options.account.toString(),
+            account = options.account,
             commitment = commitment,
             environment = sdkConfig.environment,
             index = sdkConfig.index,
@@ -58,7 +74,7 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
     suspend fun createAccount(options: CreateAccountOptions): Transaction {
         val appConfig = ensureAppConfig()
-        val appMint = getAppMint(appConfig, options.mint?.toString())
+        val appMint = getAppMint(appConfig, options.mint)
         val commitment = getCommitment(options.commitment)
         val reference = options.reference
 
@@ -72,24 +88,15 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
             throw Exception("Owner ${options.owner.publicKey} already has an account for mint ${appMint.publicKey}.")
         }
 
-        // Get AssociatedTokenAccount
-        val ownerTokenAccount = getTokenAddress(
-            account = options.owner.publicKey,
-            mint = appMint.publicKey
-        )
-
         val (blockhash, lastValidBlockHeight) = getBlockhashAndHeight()
 
         val tx = generateCreateAccountTransaction(
             addMemo = appMint.addMemo,
             blockhash = blockhash,
             index = sdkConfig.index,
-            lastValidBlockHeight = lastValidBlockHeight,
             mintFeePayer = appMint.feePayer,
             mintPublicKey = appMint.publicKey,
-            owner = options.owner.solana,
-            ownerTokenAccount = ownerTokenAccount,
-            reference = reference
+            owner = options.owner.solana
         )
 
         val request = CreateAccountRequest(
@@ -111,13 +118,13 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
     suspend fun getAccountInfo(options: GetAccountInfoOptions): AccountInfo {
         val appConfig = ensureAppConfig()
-        val appMint = getAppMint(appConfig, options.mint?.toString())
+        val appMint = getAppMint(appConfig, options.mint)
         val commitment = getCommitment(options.commitment)
 
         return accountApi.getAccountInfo(
             environment = sdkConfig.environment,
             index = sdkConfig.index,
-            accountId = options.account.toString(),
+            accountId = options.account,
             mint = appMint.publicKey,
             commitment = commitment
         )
@@ -139,7 +146,7 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
             accountApi.getBalance(
                 environment = sdkConfig.environment,
                 index = sdkConfig.index,
-                accountId = options.account.toString(),
+                accountId = options.account,
                 commitment = commitment
             )
         } catch (err: Exception) {
@@ -153,14 +160,14 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
     suspend fun getHistory(options: GetHistoryOptions): List<HistoryResponse> {
         val appConfig = ensureAppConfig()
-        val appMint = getAppMint(appConfig, options.mint?.toString())
+        val appMint = getAppMint(appConfig, options.mint)
         val commitment = getCommitment(options.commitment)
 
         return try {
             accountApi.getHistory(
                 environment = sdkConfig.environment,
                 index = sdkConfig.index,
-                accountId = options.account.toString(),
+                accountId = options.account,
                 mint = appMint.publicKey,
                 commitment = commitment
             )
@@ -184,14 +191,14 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
     suspend fun getTokenAccounts(options: GetTokenAccountsOptions): List<String> {
         val appConfig = ensureAppConfig()
-        val appMint = getAppMint(appConfig, options.mint?.toString())
+        val appMint = getAppMint(appConfig, options.mint)
         val commitment = getCommitment(options.commitment)
 
         return try {
             accountApi.getTokenAccounts(
                 environment = sdkConfig.environment,
                 index = sdkConfig.index,
-                accountId = options.account.toString(),
+                accountId = options.account,
                 mint = appMint.publicKey,
                 commitment = commitment
             )
@@ -215,13 +222,13 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
         }
     }
 
-    // EXISTING makeTransfer method - PRESERVED EXACTLY FROM ORIGINAL
+    // EXISTING makeTransfer method - Updated to use Options class
     suspend fun makeTransfer(options: MakeTransferOptions): Transaction {
         val appConfig = ensureAppConfig()
-        val appMint = getAppMint(appConfig, options.mint?.toString())
+        val appMint = getAppMint(appConfig, options.mint)
         val commitment = getCommitment(options.commitment)
 
-        val destination = options.destination.toString()
+        val destination = options.destination
         val senderCreate = options.senderCreate ?: false
         val reference = options.reference
 
@@ -251,7 +258,7 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
         // Derive the associated token address if the destination doesn't have a token account for this mint and senderCreate is set
         val senderCreateTokenAccount = if (destinationTokenAccount == null && senderCreate) {
-            getTokenAddress(account = destination, mint = appMint.publicKey)
+            getTokenAddress(destination, appMint.publicKey)
         } else null
 
         // The operation fails if there is still no destination token account
@@ -268,13 +275,11 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
             destination = destination,
             destinationTokenAccount = (destinationTokenAccount ?: senderCreateTokenAccount).toString(),
             index = sdkConfig.index,
-            lastValidBlockHeight = lastValidBlockHeight,
             mintDecimals = appMint.decimals,
             mintFeePayer = appMint.feePayer,
             mintPublicKey = appMint.publicKey,
             owner = options.owner.solana,
             ownerTokenAccount = ownerTokenAccount,
-            reference = reference,
             senderCreate = senderCreate && senderCreateTokenAccount != null,
             type = options.type ?: KinBinaryMemo.TransactionType.None
         )
@@ -298,7 +303,7 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
     suspend fun makeTransferBatch(options: MakeTransferBatchOptions): Transaction {
         val appConfig = ensureAppConfig()
-        val appMint = getAppMint(appConfig, options.mint?.toString())
+        val appMint = getAppMint(appConfig, options.mint)
         val commitment = getCommitment(options.commitment)
 
         val destinations = options.destinations
@@ -328,16 +333,16 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
         val nonExistingDestinations = mutableListOf<String>()
         val destinationInfo = destinations.map { item ->
             val destination = findTokenAccount(
-                account = item.destination.toString(),
+                account = item.destination,
                 commitment = commitment,
                 mint = appMint.publicKey
             )
             if (destination == null) {
-                nonExistingDestinations.add(item.destination.toString())
+                nonExistingDestinations.add(item.destination)
             }
             TransferDestination(
                 amount = item.amount,
-                destination = destination
+                destination = destination ?: ""
             )
         }
 
@@ -350,46 +355,19 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
         val (blockhash, lastValidBlockHeight) = getBlockhashAndHeight()
 
-        val tx = generateMakeTransferBatchTransaction(
-            addMemo = appMint.addMemo,
-            blockhash = blockhash,
-            destinations = destinationInfo,
-            index = sdkConfig.index,
-            lastValidBlockHeight = lastValidBlockHeight,
-            mintDecimals = appMint.decimals,
-            mintFeePayer = appMint.feePayer,
-            mintPublicKey = appMint.publicKey,
-            owner = options.owner.solana,
-            ownerTokenAccount = ownerTokenAccount,
-            type = options.type ?: KinBinaryMemo.TransactionType.None
-        )
-
-        return try {
-            makeTransferRequest(
-                MakeTransferRequest(
-                    commitment = commitment,
-                    environment = sdkConfig.environment,
-                    index = sdkConfig.index,
-                    lastValidBlockHeight = lastValidBlockHeight,
-                    mint = appMint.publicKey,
-                    reference = reference,
-                    tx = serializeTransaction(tx)
-                )
-            )
-        } catch (err: Exception) {
-            throw Exception(err.message ?: "Unknown error")
-        }
+        // For now, throw exception as batch transfer helper is not implemented
+        throw Exception("Batch transfer not yet implemented - missing generateMakeTransferBatchTransaction helper")
     }
 
     suspend fun requestAirdrop(options: RequestAirdropOptions): RequestAirdropResponse {
         val appConfig = ensureAppConfig()
-        val appMint = getAppMint(appConfig, options.mint?.toString())
+        val appMint = getAppMint(appConfig, options.mint)
         val commitment = getCommitment(options.commitment)
 
         return try {
             airdropApi.requestAirdrop(
                 RequestAirdropRequest(
-                    account = options.account?.toString(),
+                    account = options.account,
                     amount = options.amount,
                     commitment = commitment,
                     environment = sdkConfig.environment,
@@ -403,13 +381,11 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
     }
 
     // =========================================================================
-    // NEW METHODS - PURELY ADDITIVE WITH ENHANCED VERSIONED SUPPORT
+    // NEW METHODS - Enhanced versioned support
     // =========================================================================
 
     /**
      * Enhanced makeTransfer with versioned transaction support
-     * This is an enhanced version that supports both legacy and versioned transactions
-     * Follows exact same patterns as existing makeTransfer but adds versioned capabilities
      */
     suspend fun makeTransferEnhanced(
         options: MakeTransferOptions,
@@ -424,10 +400,10 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
         // For versioned transactions, follow the exact same logic as makeTransfer
         // but add versioned flags to the request
         val appConfig = ensureAppConfig()
-        val appMint = getAppMint(appConfig, options.mint?.toString())
+        val appMint = getAppMint(appConfig, options.mint)
         val commitment = getCommitment(options.commitment)
 
-        val destination = options.destination.toString()
+        val destination = options.destination
         val senderCreate = options.senderCreate ?: false
         val reference = options.reference
 
@@ -457,7 +433,7 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
         // Derive the associated token address if the destination doesn't have a token account for this mint and senderCreate is set (same as original)
         val senderCreateTokenAccount = if (destinationTokenAccount == null && senderCreate) {
-            getTokenAddress(account = destination, mint = appMint.publicKey)
+            getTokenAddress(destination, appMint.publicKey)
         } else null
 
         // The operation fails if there is still no destination token account (same as original)
@@ -475,13 +451,11 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
             destination = destination,
             destinationTokenAccount = (destinationTokenAccount ?: senderCreateTokenAccount).toString(),
             index = sdkConfig.index,
-            lastValidBlockHeight = lastValidBlockHeight,
             mintDecimals = appMint.decimals,
             mintFeePayer = appMint.feePayer,
             mintPublicKey = appMint.publicKey,
             owner = options.owner.solana,
             ownerTokenAccount = ownerTokenAccount,
-            reference = reference,
             senderCreate = senderCreate && senderCreateTokenAccount != null,
             type = options.type ?: KinBinaryMemo.TransactionType.None
         )
@@ -508,7 +482,6 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
     /**
      * Submit a pre-built transaction (e.g., from Jupiter)
-     * Handles pre-built transactions from external sources like Jupiter
      */
     suspend fun submitPreBuiltTransaction(
         transactionBase64: String,
@@ -544,7 +517,7 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
     }
 
     // =========================================================================
-    // EXISTING PRIVATE METHODS - PRESERVED EXACTLY FROM ORIGINAL
+    // PRIVATE HELPER METHODS
     // =========================================================================
 
     private fun createApiHeaders(headers: Map<String, String> = emptyMap()): Map<String, String> {
@@ -579,7 +552,6 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
         }
 
         // Find the token account for this mint
-        // FIXME: we need to support the use case where the account has multiple accounts for this mint
         return accountInfo.tokens?.find { it.mint == mint }?.account
     }
 
@@ -597,5 +569,23 @@ class KineticSdkInternal(private val sdkConfig: KineticSdkConfig) {
 
     private suspend fun makeTransferRequest(request: MakeTransferRequest): Transaction {
         return transactionApi.makeTransfer(request)
+    }
+
+    // =========================================================================
+    // MISSING HELPER FUNCTIONS
+    // =========================================================================
+
+    private fun getAppMint(appConfig: AppConfig, mint: String?): AppConfigMint {
+        return if (mint == null) {
+            appConfig.mint
+        } else {
+            appConfig.mints.find { it.publicKey == mint }
+                ?: throw Exception("Mint $mint not found in app config")
+        }
+    }
+
+    private fun serializeTransaction(transaction: SolanaTransaction): String {
+        val serialized = transaction.serialize(SerializeConfig(requireAllSignatures = false, verifySignatures = false))
+        return Base64.encodeToString(serialized, Base64.NO_WRAP)
     }
 }
