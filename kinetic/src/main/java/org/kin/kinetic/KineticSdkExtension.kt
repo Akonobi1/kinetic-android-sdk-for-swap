@@ -190,7 +190,7 @@ suspend fun KineticSdk.submitVersionedTransaction(
 
 /**
  * Execute a Jupiter swap transaction with versioned transaction support
- * Updated to use Jupiter v6 API
+ * Updated to use Jupiter v6 API with custom fee payer support
  *
  * @param fromToken Source token mint address
  * @param toToken Destination token mint address
@@ -210,6 +210,13 @@ suspend fun KineticSdk.executeJupiterSwap(
 ): KineticTransaction {
     val tag = "KineticSwap"
     Log.d(tag, "Starting Jupiter swap: $fromToken -> $toToken, amount=$amount, slippage=$slippagePercent%")
+
+    // Get app config to access the Kinetic fee payer
+    val appConfig = this.config ?: throw IllegalStateException("App config not initialized")
+    val kineticFeePayer = appConfig.mint.publicKey
+    
+    Log.d(tag, "Using Kinetic fee payer: $kineticFeePayer")
+    Log.d(tag, "User public key: ${owner.publicKey}")
 
     // Create HTTP client with appropriate timeouts
     val httpClient = OkHttpClient.Builder()
@@ -265,10 +272,19 @@ suspend fun KineticSdk.executeJupiterSwap(
 
     Log.d(tag, "Jupiter quote response: $quoteJson")
 
-    // Step 2: Get swap transaction from Jupiter v6
+    // Step 2: Get swap transaction from Jupiter v6 - WITH FIXED PAYER PARAMETER
     val swapRequest = JSONObject().apply {
         put("quoteResponse", JSONObject(quoteJson))
         put("userPublicKey", owner.publicKey)
+        
+        // ============================================================================
+        // CRITICAL FIX: Add the missing "payer" parameter
+        // This tells Jupiter to create the transaction with Kinetic's fee payer
+        // instead of the user's public key, preventing fee payer mismatches
+        // ============================================================================
+        put("payer", kineticFeePayer)
+        Log.d(tag, "Added custom payer to Jupiter request: $kineticFeePayer")
+        
         // Configure transaction format for v6
         put("dynamicComputeUnitLimit", true)
         put("skipUserAccountsCheck", false)
@@ -284,7 +300,7 @@ suspend fun KineticSdk.executeJupiterSwap(
         put("prioritizationFeeLamports", prioritizationFeeLamports)
     }
 
-    Log.d(tag, "Jupiter swap request: ${swapRequest.toString(2)}")
+    Log.d(tag, "Jupiter swap request (with custom payer): ${swapRequest.toString(2)}")
 
     val requestBody = swapRequest.toString().toRequestBody("application/json".toMediaTypeOrNull())
 
@@ -312,10 +328,9 @@ suspend fun KineticSdk.executeJupiterSwap(
     val swapTransaction = swapResult.getString("swapTransaction")
 
     // Submit the transaction using versioned transaction method
-    Log.d(tag, "Submitting versioned transaction to Kinetic")
+    Log.d(tag, "Submitting versioned transaction to Kinetic with matching fee payer")
     return submitVersionedTransaction(swapTransaction, owner, commitment)
 }
-
 /**
  * Enhanced Jupiter swap execution method for v6 API
  * 
