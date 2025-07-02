@@ -213,7 +213,7 @@ suspend fun KineticSdk.executeJupiterSwap(
 
     // Get app config to access the Kinetic fee payer
     val appConfig = this.config ?: throw IllegalStateException("App config not initialized")
-    val kineticFeePayer = appConfig.mint.publicKey
+    val kineticFeePayer = appConfig.mint.feePayer
     
     Log.d(tag, "Using Kinetic fee payer: $kineticFeePayer")
     Log.d(tag, "User public key: ${owner.publicKey}")
