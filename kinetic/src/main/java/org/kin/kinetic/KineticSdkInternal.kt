@@ -173,6 +173,9 @@ class KineticSdkInternal(
         reference: String?,
         senderCreate: Boolean,
         type: KinBinaryMemo.TransactionType,
+        asLegacy: Boolean? = null,
+        isVersioned: Boolean? = null,
+        addressLookupTableAccounts: List<String>? = null
     ): Transaction {
         val appConfig = ensureAppConfig()
         val commitment = getCommitment(commitment)
@@ -218,13 +221,54 @@ class KineticSdkInternal(
         val serialized = tx.serialize(SerializeConfig(requireAllSignatures = false, verifySignatures = false))
 
         val makeTransferRequest = MakeTransferRequest(
-            commitment,
-            sdkConfig.environment,
-            sdkConfig.index,
-            mint.publicKey,
-            latestBlockhashResponse.lastValidBlockHeight,
-            Base64.encodeToString(serialized, 0),
-            reference,
+            commitment = commitment,
+            environment = sdkConfig.environment,
+            index = sdkConfig.index,
+            mint = mint.publicKey,
+            lastValidBlockHeight = latestBlockhashResponse.lastValidBlockHeight,
+            tx = Base64.encodeToString(serialized, 0),
+            reference = reference,
+            isVersioned = isVersioned ?: false,
+            asLegacy = asLegacy ?: false,
+            addressLookupTableAccounts = addressLookupTableAccounts
+        )
+
+        return withContext(dispatcher) {
+            transactionApi.makeTransfer(makeTransferRequest)
+        }
+    }
+
+    /**
+     * Enhanced makeTransfer specifically for pre-built transactions (e.g., from Jupiter)
+     * This is how we'll set asLegacy to true for Jupiter transactions
+     */
+    suspend fun makeTransferFromSerializedTransaction(
+        serializedTransaction: String,
+        owner: Keypair,
+        commitment: Commitment? = null,
+        asLegacy: Boolean = false,
+        isVersioned: Boolean = false,
+        addressLookupTableAccounts: List<String>? = null,
+        reference: String? = null
+    ): Transaction {
+        val appConfig = ensureAppConfig()
+        val resolvedCommitment = getCommitment(commitment)
+        val latestBlockhashResponse = this.getBlockhash()
+
+        // Use the default mint for pre-built transactions
+        val defaultMint = appConfig.mint
+
+        val makeTransferRequest = MakeTransferRequest(
+            commitment = resolvedCommitment,
+            environment = sdkConfig.environment,
+            index = sdkConfig.index,
+            mint = defaultMint.publicKey,
+            lastValidBlockHeight = latestBlockhashResponse.lastValidBlockHeight,
+            tx = serializedTransaction,
+            reference = reference,
+            isVersioned = isVersioned,
+            asLegacy = asLegacy,  // THIS IS HOW WE SET asLegacy TO TRUE
+            addressLookupTableAccounts = addressLookupTableAccounts
         )
 
         return withContext(dispatcher) {
