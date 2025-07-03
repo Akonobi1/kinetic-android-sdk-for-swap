@@ -210,7 +210,11 @@ suspend fun KineticSdk.executeJupiterSwap(
     owner: Keypair,
     commitment: Commitment? = null,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     useLegacyTransaction: Boolean = false,
+=======
+    useLegacyTransaction: Boolean = true,  // Default to true to fix current Jupiter issues
+>>>>>>> Stashed changes
 =======
     useLegacyTransaction: Boolean = true,  // Default to true to fix current Jupiter issues
 >>>>>>> Stashed changes
@@ -281,8 +285,14 @@ private suspend fun getJupiterSwapTransaction(
             "&restrictIntermediateTokens=true" +
             (if (simplifyRoutes) "&onlyDirectRoutes=true" else "") +
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             "&maxAccounts=${maxRouteHops * 5}" +  // Estimate accounts needed based on hops
             "&maxRoutes=5"  // Limit to a single route for simplicity
+=======
+            "&maxAccounts=${maxRouteHops * 5}" +
+            "&maxRoutes=5" +
+            "&asLegacyTransaction=$useLegacyTransaction"
+>>>>>>> Stashed changes
 =======
             "&maxAccounts=${maxRouteHops * 5}" +
             "&maxRoutes=5" +
