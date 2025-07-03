@@ -109,85 +109,6 @@ suspend fun KineticSdk.submitVersionedTransaction(
 }
 
 /**
- * Execute a Jupiter swap transaction with explicit legacy format
- * This will set asLegacy = true to fix your current Jupiter issue
- *
- * @param fromToken Source token mint address
- * @param toToken Destination token mint address
- * @param amount Amount to swap in decimals (e.g. "10.5")
- * @param slippagePercent Maximum allowed slippage in percent (e.g. "1.0" for 1%)
- * @param owner Keypair of the wallet initiating the swap
- * @param commitment Transaction commitment level
- * @return Transaction result with signature
- */
-suspend fun KineticSdk.executeJupiterSwapAsLegacy(
-    fromToken: String,
-    toToken: String,
-    amount: String,
-    slippagePercent: String,
-    owner: Keypair,
-    commitment: Commitment? = null
-): KineticTransaction {
-    val tag = "JupiterLegacy"
-    Log.d(tag, "=== EXECUTING JUPITER SWAP AS LEGACY ===")
-    Log.d(tag, "From: $fromToken -> To: $toToken, Amount: $amount")
-
-    val swapTransaction = getJupiterSwapTransaction(
-        fromToken = fromToken,
-        toToken = toToken,
-        amount = amount,
-        slippagePercent = slippagePercent,
-        owner = owner,
-        useLegacyTransaction = true
-    )
-
-    Log.d(tag, "Submitting with asLegacy = true")
-    
-    // This will set asLegacy = true in MakeTransferRequest
-    return submitSerializedTransaction(swapTransaction, owner, commitment, addSignature = true)
-}
-
-/**
- * Execute a Jupiter swap transaction with explicit versioned format
- *
- * @param fromToken Source token mint address
- * @param toToken Destination token mint address
- * @param amount Amount to swap in decimals (e.g. "10.5")
- * @param slippagePercent Maximum allowed slippage in percent (e.g. "1.0" for 1%)
- * @param owner Keypair of the wallet initiating the swap
- * @param commitment Transaction commitment level
- * @param addressLookupTableAccounts Optional lookup table addresses
- * @return Transaction result with signature
- */
-suspend fun KineticSdk.executeJupiterSwapAsVersioned(
-    fromToken: String,
-    toToken: String,
-    amount: String,
-    slippagePercent: String,
-    owner: Keypair,
-    commitment: Commitment? = null,
-    addressLookupTableAccounts: List<String>? = null
-): KineticTransaction {
-    val tag = "JupiterVersioned"
-    Log.d(tag, "=== EXECUTING JUPITER SWAP AS VERSIONED ===")
-    Log.d(tag, "From: $fromToken -> To: $toToken, Amount: $amount")
-
-    val swapTransaction = getJupiterSwapTransaction(
-        fromToken = fromToken,
-        toToken = toToken,
-        amount = amount,
-        slippagePercent = slippagePercent,
-        owner = owner,
-        useLegacyTransaction = false
-    )
-
-    Log.d(tag, "Submitting with isVersioned = true")
-    
-    // This will set isVersioned = true in MakeTransferRequest
-    return submitVersionedTransaction(swapTransaction, owner, commitment, addressLookupTableAccounts)
-}
-
-/**
  * Enhanced executeJupiterSwap with explicit format control
  * Updated to use the new asLegacy/isVersioned system
  *
@@ -209,19 +130,7 @@ suspend fun KineticSdk.executeJupiterSwap(
     slippagePercent: String,
     owner: Keypair,
     commitment: Commitment? = null,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-    useLegacyTransaction: Boolean = false,
-=======
     useLegacyTransaction: Boolean = true,  // Default to true to fix current Jupiter issues
->>>>>>> Stashed changes
-=======
-    useLegacyTransaction: Boolean = true,  // Default to true to fix current Jupiter issues
->>>>>>> Stashed changes
-=======
-    useLegacyTransaction: Boolean = true,  // Default to true to fix current Jupiter issues
->>>>>>> Stashed changes
     simplifyRoutes: Boolean = true,
     maxRouteHops: Int = 2
 ): KineticTransaction {
@@ -288,26 +197,9 @@ private suspend fun getJupiterSwapTransaction(
             "&slippageBps=$slippageBps" +
             "&restrictIntermediateTokens=true" +
             (if (simplifyRoutes) "&onlyDirectRoutes=true" else "") +
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            "&maxAccounts=${maxRouteHops * 5}" +  // Estimate accounts needed based on hops
-            "&maxRoutes=5"  // Limit to a single route for simplicity
-=======
             "&maxAccounts=${maxRouteHops * 5}" +
             "&maxRoutes=5" +
             "&asLegacyTransaction=$useLegacyTransaction"
->>>>>>> Stashed changes
-=======
-            "&maxAccounts=${maxRouteHops * 5}" +
-            "&maxRoutes=5" +
-            "&asLegacyTransaction=$useLegacyTransaction"
->>>>>>> Stashed changes
-=======
-            "&maxAccounts=${maxRouteHops * 5}" +
-            "&maxRoutes=5" +
-            "&asLegacyTransaction=$useLegacyTransaction"
->>>>>>> Stashed changes
 
     Log.d(tag, "Getting Jupiter quote: $quoteUrl")
     val quoteRequest = Request.Builder().url(quoteUrl).get().build()
@@ -355,17 +247,6 @@ private suspend fun getJupiterSwapTransaction(
     // Parse the swap response to get the transaction
     val swapResult = JSONObject(swapResponseBody)
     return@withContext swapResult.getString("swapTransaction")
-}
-
-/**
- * Create API headers for KineticSDK
- */
-private fun KineticSdk.createHeaders(): Map<String, String> {
-    return mapOf(
-        "kinetic-environment" to this.sdkConfig.environment,
-        "kinetic-index" to this.sdkConfig.index.toString(),
-        "kinetic-user-agent" to "KineticSDK-Jupiter"
-    ) + this.sdkConfig.headers
 }
 
 /**
