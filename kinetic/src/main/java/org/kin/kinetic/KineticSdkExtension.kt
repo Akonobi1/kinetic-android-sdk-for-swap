@@ -155,7 +155,7 @@ suspend fun KineticSdk.executeJupiterSwap(
     slippagePercent: String,
     owner: Keypair,
     commitment: Commitment? = null,
-    useLegacyTransaction: Boolean = false,
+    useLegacyTransaction: Boolean = true,
     simplifyRoutes: Boolean = true,
     maxRouteHops: Int = 2
 ): KineticTransaction {
@@ -187,7 +187,8 @@ suspend fun KineticSdk.executeJupiterSwap(
             // Add route optimization parameters based on inputs
             (if (simplifyRoutes) "&onlyDirectRoutes=true" else "") +
             "&maxAccounts=${maxRouteHops * 5}" +  // Estimate accounts needed based on hops
-            "&maxRoutes=5"  // Limit to a single route for simplicity
+            "&maxRoutes=5" +  // Limit to a single route for simplicity
+            "&asLegacyTransaction=true"
 
     Log.d(tag, "Getting Jupiter quote: $quoteUrl")
     val quoteRequest = Request.Builder()
