@@ -305,6 +305,7 @@ suspend fun KineticSdk.isTransactionConfirmed(
  * @param delayMs Delay between attempts in milliseconds
  * @return true if transaction is confirmed within the timeout
  */
+ //dummy edit to restart jitpack
 suspend fun KineticSdk.waitForTransactionConfirmation(
     signature: String,
     commitment: Commitment? = null,
