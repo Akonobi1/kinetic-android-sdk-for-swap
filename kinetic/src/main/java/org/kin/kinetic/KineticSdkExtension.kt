@@ -218,7 +218,7 @@ private suspend fun getJupiterSwapTransaction(
     val swapRequest = JSONObject().apply {
     put("quoteResponse", JSONObject(quoteJson))
     put("userPublicKey", owner.publicKey)
-    put("payer", mintFeePayer)  // ← ADD THIS LINE
+    //put("payer", mintFeePayer)  // ← ADD THIS LINE
     put("asLegacyTransaction", useLegacyTransaction)
     put("useSharedAccounts", !useLegacyTransaction)
     put("dynamicComputeUnitLimit", true)
