@@ -216,13 +216,14 @@ private suspend fun getJupiterSwapTransaction(
 
     // Step 2: Get swap transaction from Jupiter
     val swapRequest = JSONObject().apply {
-        put("quoteResponse", JSONObject(quoteJson))
-        put("userPublicKey", owner.publicKey)
-        put("asLegacyTransaction", useLegacyTransaction)
-        put("useSharedAccounts", !useLegacyTransaction)
-        put("dynamicComputeUnitLimit", true)
-        put("skipUserAccountsCheck", false)
-    }
+    put("quoteResponse", JSONObject(quoteJson))
+    put("userPublicKey", owner.publicKey)
+    put("payer", mintFeePayer)  // ← ADD THIS LINE
+    put("asLegacyTransaction", useLegacyTransaction)
+    put("useSharedAccounts", !useLegacyTransaction)
+    put("dynamicComputeUnitLimit", true)
+    put("skipUserAccountsCheck", false)
+}
 
     Log.d(tag, "Requesting Jupiter swap transaction (asLegacyTransaction=$useLegacyTransaction)")
 

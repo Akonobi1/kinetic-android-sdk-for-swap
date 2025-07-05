@@ -1,7 +1,8 @@
 package org.kin.kinetic.jupiter
 
 /**
- * Data models for Jupiter Swap API
+ * Data models for Jupiter Swap API v6
+ * Updated to match app's superior implementation
  */
 
 /**
@@ -45,13 +46,44 @@ data class SwapInfo(
 )
 
 /**
- * Jupiter swap response
+ * Jupiter swap response (legacy - for v4/v5 API)
  */
 data class JupiterSwapResponse(
     val swapTransaction: String,
     val lastValidBlockHeight: Long,
     val prioritizationFeeLamports: Long,
     val computeUnitLimit: Long
+)
+
+/**
+ * Jupiter v6 swap instructions response
+ */
+data class JupiterInstructionsResponse(
+    val tokenLedgerInstruction: JupiterInstruction? = null,
+    val computeBudgetInstructions: List<JupiterInstruction> = emptyList(),
+    val setupInstructions: List<JupiterInstruction> = emptyList(),
+    val swapInstruction: JupiterInstruction,
+    val cleanupInstruction: JupiterInstruction? = null,
+    val addressLookupTableAddresses: List<String> = emptyList(),
+    val error: String? = null
+)
+
+/**
+ * Individual Jupiter instruction
+ */
+data class JupiterInstruction(
+    val programId: String,
+    val accounts: List<JupiterAccountMeta>,
+    val data: String
+)
+
+/**
+ * Account metadata for Jupiter instructions
+ */
+data class JupiterAccountMeta(
+    val pubkey: String,
+    val isSigner: Boolean,
+    val isWritable: Boolean
 )
 
 /**
@@ -78,5 +110,6 @@ data class SwapResult(
     val outputAmount: String? = null,
     val inputToken: String? = null,
     val outputToken: String? = null,
-    val effectivePrice: Double? = null
+    val effectivePrice: Double? = null,
+    val platformFee: String? = null
 )
