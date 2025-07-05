@@ -12,10 +12,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import org.kin.kinetic.generated.api.TransactionApi
 import org.kin.kinetic.generated.api.model.Commitment
 import org.kin.kinetic.generated.api.model.ConfirmationStatus
-import org.kin.kinetic.generated.api.model.MakeTransferRequest
 import org.kin.kinetic.generated.api.model.Transaction as KineticTransaction
 import java.util.concurrent.TimeUnit
 
@@ -138,7 +136,7 @@ suspend fun KineticSdk.executeJupiterSwap(
     Log.d(tag, "Starting Jupiter swap: $fromToken -> $toToken, amount=$amount, slippage=$slippagePercent%")
     Log.d(tag, "Using ${if (useLegacyTransaction) "LEGACY (asLegacy=true)" else "VERSIONED (isVersioned=true)"} transactions")
 
-    val swapTransaction = getJupiterSwapTransaction(
+    val swapTransaction = this.getJupiterSwapTransaction(
         fromToken = fromToken,
         toToken = toToken,
         amount = amount,
@@ -163,7 +161,7 @@ suspend fun KineticSdk.executeJupiterSwap(
  * Helper method to get Jupiter swap transaction from API
  * Extracted for reuse across different submission methods
  */
-private suspend fun getJupiterSwapTransaction(
+private suspend fun KineticSdk.getJupiterSwapTransaction(
     fromToken: String,
     toToken: String,
     amount: String,
@@ -181,6 +179,12 @@ private suspend fun getJupiterSwapTransaction(
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    // Define mintFeePayer from Kinetic SDK configuration
+    val mintFeePayer = this@getJupiterSwapTransaction.getFeePayer(owner)
+    Log.d(tag, "Using fee payer: ${mintFeePayer.take(8)}... (${
+        if (mintFeePayer == owner.publicKey) "owner pays" else "Kinetic pays"
+    })")
 
     // Convert amount to smallest units (based on decimal places)
     val inputDecimals = if (fromToken.equals("kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6", ignoreCase = true)) 5 else 6
@@ -216,14 +220,14 @@ private suspend fun getJupiterSwapTransaction(
 
     // Step 2: Get swap transaction from Jupiter
     val swapRequest = JSONObject().apply {
-    put("quoteResponse", JSONObject(quoteJson))
-    put("userPublicKey", owner.publicKey)
-    //put("payer", mintFeePayer)  // ← ADD THIS LINE
-    put("asLegacyTransaction", useLegacyTransaction)
-    put("useSharedAccounts", !useLegacyTransaction)
-    put("dynamicComputeUnitLimit", true)
-    put("skipUserAccountsCheck", false)
-}
+        put("quoteResponse", JSONObject(quoteJson))
+        put("userPublicKey", owner.publicKey)
+        put("payer", mintFeePayer)  // ✅ Fee payer for SOL transaction fees (Kinetic pays when configured)
+        put("asLegacyTransaction", useLegacyTransaction)
+        put("useSharedAccounts", !useLegacyTransaction)
+        put("dynamicComputeUnitLimit", true)
+        put("skipUserAccountsCheck", false)
+    }
 
     Log.d(tag, "Requesting Jupiter swap transaction (asLegacyTransaction=$useLegacyTransaction)")
 
@@ -248,6 +252,25 @@ private suspend fun getJupiterSwapTransaction(
     // Parse the swap response to get the transaction
     val swapResult = JSONObject(swapResponseBody)
     return@withContext swapResult.getString("swapTransaction")
+}
+
+/**
+ * Get the appropriate fee payer for transactions
+ * Uses Kinetic SDK configuration when available, falls back to owner
+ *
+ * @param owner The wallet owner as fallback
+ * @return Fee payer public key address
+ */
+fun KineticSdk.getFeePayer(owner: Keypair): String {
+    return try {
+        // Try to get fee payer from app config (preferred - Kinetic pays fees)
+        this.config?.mint?.feePayer 
+            ?: this.config?.mints?.firstOrNull()?.feePayer
+            ?: owner.publicKey // Fallback to owner as fee payer
+    } catch (e: Exception) {
+        Log.w("KineticExt", "Could not get fee payer from config, using owner: ${e.message}")
+        owner.publicKey // Safe fallback
+    }
 }
 
 /**
