@@ -382,7 +382,7 @@ class JupiterSwapManager {
                 )
             }
 
-            val instructions = instructionsResult.getOrThrow()
+            // Instructions retrieved successfully, proceeding with direct Jupiter swap API
             Log.d(TAG, "Got swap instructions successfully")
 
             // Step 3: Use direct Jupiter swap API to get complete transaction

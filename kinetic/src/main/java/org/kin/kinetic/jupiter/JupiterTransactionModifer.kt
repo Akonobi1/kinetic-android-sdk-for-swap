@@ -203,7 +203,7 @@ class JupiterTransactionModifier {
 
             analysis["instructionCount"] = transaction.instructions.size
             analysis["signerCount"] = transaction.signatures.size
-            analysis["feePayer"] = transaction.feePayer?.toBase58()?.take(8) + "..."
+            analysis["feePayer"] = transaction.feePayer?.toBase58()?.take(8)?.let { "${it}..." } ?: "not set"
             analysis["recentBlockhash"] = transaction.recentBlockhash ?: "not set"
 
             val programIds = transaction.instructions.map {
