@@ -105,18 +105,18 @@ class MainActivity : AppCompatActivity() {
         kinBalanceText = findViewById(R.id.kin_balance_text)
         makeTransferButton = findViewById(R.id.make_transfer_button)
         makeTransferText = findViewById(R.id.make_transfer_text)
-        openSwapActivityButton = findViewById(R.id.open_swap_activity_button)
+        //openSwapActivityButton = findViewById(R.id.open_swap_activity_button)
         serverConfigText = findViewById(R.id.server_config_text)
         tokenAccountsText = findViewById(R.id.token_accounts_text)
         transactionText = findViewById(R.id.transaction_text)
     }
 
-    private fun setupButtonClickListeners() {
+    //private fun setupButtonClickListeners() {
         // New button to open the Swap Activity
-        openSwapActivityButton.setOnClickListener {
-            val intent = Intent(this, SwapActivity::class.java)
-            startActivity(intent)
-        }
+        //openSwapActivityButton.setOnClickListener {
+           // val intent = Intent(this, SwapActivity::class.java)
+           // startActivity(intent)
+        //}
 
         backupAccountButton.setOnClickListener {
             kineticNetworkScope.launch {
