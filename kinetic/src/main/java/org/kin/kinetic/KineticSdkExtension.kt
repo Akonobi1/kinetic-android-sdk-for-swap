@@ -64,14 +64,14 @@ suspend fun KineticSdk.executeJupiterSwap(
         // Try legacy approach first (proven working approach)
         Log.d(TAG, "Attempting legacy Transaction approach...")
         executeJupiterSwapLegacy(fromToken, toToken, amount, slippagePercent, owner, commitment)
-    } catch (legacyError) {
+    } catch (legacyError: Exception) {
         Log.w(TAG, "Legacy approach failed: ${legacyError.message}")
         Log.d(TAG, "Attempting versioned Transaction approach...")
         
         try {
             // Fall back to versioned approach
             executeJupiterSwapVersioned(fromToken, toToken, amount, slippagePercent, owner, commitment)
-        } catch (versionedError) {
+        } catch (versionedError: Exception) {
             Log.e(TAG, "Both legacy and versioned approaches failed")
             Log.e(TAG, "Legacy error: ${legacyError.message}")
             Log.e(TAG, "Versioned error: ${versionedError.message}")
