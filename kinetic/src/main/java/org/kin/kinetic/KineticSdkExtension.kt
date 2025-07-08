@@ -2,113 +2,43 @@ package org.kin.kinetic
 
 import android.util.Base64
 import android.util.Log
-import com.solana.core.PublicKey
-import com.solana.core.SerializeConfig
-import com.solana.core.Transaction as SolanaTransaction
+import com.solana.core.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import org.kin.kinetic.generated.api.TransactionApi
 import org.kin.kinetic.generated.api.model.Commitment
 import org.kin.kinetic.generated.api.model.ConfirmationStatus
+import org.kin.kinetic.generated.api.model.MakeTransferRequest
 import org.kin.kinetic.generated.api.model.Transaction as KineticTransaction
+import org.kin.kinetic.generated.api.model.ConfirmationStatus
 import java.util.concurrent.TimeUnit
 
 /**
- * Extension functions for KineticSdk to support Jupiter swaps and other advanced functionality
- * Enhanced with comprehensive asLegacy and versioned transaction support
+ * Enhanced KineticSdk extensions for Jupiter swaps using instruction-based approach
+ * Based on the successful swap implementation that used /swap-instructions endpoint
+ * Implements both legacy Transaction and versioned VersionedTransaction support with automatic fallback
  */
 
-/**
- * Submit a pre-built serialized transaction to the Solana network as LEGACY format
- * This is how we set asLegacy = true for Jupiter transactions
- *
- * @param serializedTransaction Base64 encoded transaction
- * @param owner Keypair to sign the transaction (if not already signed)
- * @param commitment Transaction commitment level
- * @param addSignature Whether to add the owner's signature to the transaction
- * @return Transaction result from Kinetic API
- */
-suspend fun KineticSdk.submitSerializedTransaction(
-    serializedTransaction: String,
-    owner: Keypair,
-    commitment: Commitment? = null,
-    addSignature: Boolean = true
-): KineticTransaction {
-    // Decode the serialized transaction
-    val transactionBytes = Base64.decode(serializedTransaction, Base64.DEFAULT)
+private const val TAG = "KineticJupiterSwap"
 
-    // If we need to add a signature
-    val transaction = if (addSignature) {
-        try {
-            // Deserialize, sign, and re-serialize
-            val tx = SolanaTransaction.from(transactionBytes)
-
-            // Check if the transaction already has the owner's signature
-            val ownerPubKey = owner.solanaPublicKey
-            val alreadySigned = tx.signatures.any { it.publicKey.toBase58() == ownerPubKey.toBase58() }
-
-            if (!alreadySigned) {
-                // Add signature if not already present
-                tx.partialSign(owner.solana)
-            }
-
-            // Re-serialize the transaction
-            val reSerializedTx = tx.serialize(SerializeConfig(requireAllSignatures = false, verifySignatures = false))
-            Base64.encodeToString(reSerializedTx, Base64.NO_WRAP)
-        } catch (e: Exception) {
-            Log.w("KineticExt", "Error processing transaction with signature: ${e.message}")
-            serializedTransaction
-        }
-    } else {
-        serializedTransaction
-    }
-
-    // ✅ FIXED: Use the public API method with asLegacy = true
-    return this.submitPreBuiltTransaction(
-        serializedTransaction = transaction,
-        owner = owner,
-        commitment = commitment,
-        asLegacy = true,  // SET asLegacy = true for legacy transactions
-        isVersioned = false
-    )
+// HTTP client for Jupiter API calls
+private val jupiterHttpClient by lazy {
+    OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
 }
 
 /**
- * Submit a versioned transaction directly to Kinetic
- * This sets asLegacy = false and isVersioned = true
- *
- * @param serializedTransaction Base64 encoded transaction (v0 format)
- * @param owner Keypair of the wallet
- * @param commitment Transaction commitment level
- * @param addressLookupTableAccounts Optional lookup table addresses
- * @return Transaction result with signature
- */
-suspend fun KineticSdk.submitVersionedTransaction(
-    serializedTransaction: String,
-    owner: Keypair,
-    commitment: Commitment? = null,
-    addressLookupTableAccounts: List<String>? = null
-): KineticTransaction {
-    Log.d("KineticVersioned", "Submitting versioned transaction")
-
-    // ✅ FIXED: Use the public API method with isVersioned = true
-    return this.submitPreBuiltTransaction(
-        serializedTransaction = serializedTransaction,
-        owner = owner,
-        commitment = commitment,
-        asLegacy = false,  // SET asLegacy = false for versioned transactions
-        isVersioned = true,  // SET isVersioned = true for versioned transactions
-        addressLookupTableAccounts = addressLookupTableAccounts
-    )
-}
-
-/**
- * Enhanced executeJupiterSwap with explicit format control
- * Updated to use the new asLegacy/isVersioned system
+ * Execute Jupiter swap with automatic fallback: Legacy first, then Versioned
+ * Uses the successful /swap-instructions approach instead of /swap endpoint
  *
  * @param fromToken Source token mint address
  * @param toToken Destination token mint address  
@@ -116,9 +46,6 @@ suspend fun KineticSdk.submitVersionedTransaction(
  * @param slippagePercent Maximum allowed slippage in percent (e.g. "1.0" for 1%)
  * @param owner Keypair of the wallet initiating the swap
  * @param commitment Transaction commitment level
- * @param useLegacyTransaction Whether to use legacy transactions (default: true to fix current issues)
- * @param simplifyRoutes Whether to simplify routes for better success rate
- * @param maxRouteHops Maximum number of route hops
  * @return Transaction result with signature
  */
 suspend fun KineticSdk.executeJupiterSwap(
@@ -127,158 +54,521 @@ suspend fun KineticSdk.executeJupiterSwap(
     amount: String,
     slippagePercent: String,
     owner: Keypair,
-    commitment: Commitment? = null,
-    useLegacyTransaction: Boolean = true,  // Default to true to fix current Jupiter issues
-    simplifyRoutes: Boolean = true,
-    maxRouteHops: Int = 2
+    commitment: Commitment? = null
 ): KineticTransaction {
-    val tag = "KineticSwap"
-    Log.d(tag, "Starting Jupiter swap: $fromToken -> $toToken, amount=$amount, slippage=$slippagePercent%")
-    Log.d(tag, "Using ${if (useLegacyTransaction) "LEGACY (asLegacy=true)" else "VERSIONED (isVersioned=true)"} transactions")
+    Log.d(TAG, "=== JUPITER SWAP WITH KINETIC FEE PAYER ===")
+    Log.d(TAG, "Starting Jupiter swap: $fromToken -> $toToken, amount=$amount, slippage=$slippagePercent%")
+    Log.d(TAG, "Approach: Instructions-based with automatic legacy/versioned fallback")
 
-    val swapTransaction = this.getJupiterSwapTransaction(
-        fromToken = fromToken,
-        toToken = toToken,
-        amount = amount,
-        slippagePercent = slippagePercent,
-        owner = owner,
-        useLegacyTransaction = useLegacyTransaction,
-        simplifyRoutes = simplifyRoutes,
-        maxRouteHops = maxRouteHops
-    )
-
-    // Submit with the appropriate method to set the correct flags
-    return if (useLegacyTransaction) {
-        Log.d(tag, "Submitting via submitSerializedTransaction (sets asLegacy=true)")
-        submitSerializedTransaction(swapTransaction, owner, commitment, addSignature = true)
-    } else {
-        Log.d(tag, "Submitting via submitVersionedTransaction (sets isVersioned=true)")
-        submitVersionedTransaction(swapTransaction, owner, commitment, null)
+    return try {
+        // Try legacy approach first (proven working approach)
+        Log.d(TAG, "Attempting legacy Transaction approach...")
+        executeJupiterSwapLegacy(fromToken, toToken, amount, slippagePercent, owner, commitment)
+    } catch (legacyError) {
+        Log.w(TAG, "Legacy approach failed: ${legacyError.message}")
+        Log.d(TAG, "Attempting versioned Transaction approach...")
+        
+        try {
+            // Fall back to versioned approach
+            executeJupiterSwapVersioned(fromToken, toToken, amount, slippagePercent, owner, commitment)
+        } catch (versionedError) {
+            Log.e(TAG, "Both legacy and versioned approaches failed")
+            Log.e(TAG, "Legacy error: ${legacyError.message}")
+            Log.e(TAG, "Versioned error: ${versionedError.message}")
+            throw Exception("Jupiter swap failed: Legacy (${legacyError.message}) | Versioned (${versionedError.message})")
+        }
     }
 }
 
 /**
- * Helper method to get Jupiter swap transaction from API
- * Extracted for reuse across different submission methods
+ * Execute Jupiter swap using legacy Transaction class (proven working approach)
  */
-private suspend fun KineticSdk.getJupiterSwapTransaction(
+private suspend fun KineticSdk.executeJupiterSwapLegacy(
     fromToken: String,
     toToken: String,
     amount: String,
     slippagePercent: String,
     owner: Keypair,
-    useLegacyTransaction: Boolean,
-    simplifyRoutes: Boolean = true,
-    maxRouteHops: Int = 2
-): String = withContext(Dispatchers.IO) {
-    val tag = "JupiterAPI"
-    
-    // Create HTTP client with appropriate timeouts
-    val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
+    commitment: Commitment?
+): KineticTransaction {
+    val tag = "${TAG}Legacy"
+    Log.d(tag, "Building legacy transaction using com.solana.core.Transaction")
 
-    // Define mintFeePayer from Kinetic SDK configuration
-    val mintFeePayer = this@getJupiterSwapTransaction.getFeePayer(owner)
-    Log.d(tag, "Using fee payer: ${mintFeePayer.take(8)}... (${
-        if (mintFeePayer == owner.publicKey) "owner pays" else "Kinetic pays"
-    })")
+    try {
+        // Step 1: Get quote from Jupiter
+        val quoteDetails = getJupiterQuote(fromToken, toToken, amount, slippagePercent)
+        val quoteJson = quoteDetails["quoteJson"] ?: throw Exception("Missing quote JSON")
+        
+        Log.d(tag, "Quote obtained - expected output: ${quoteDetails["outputAmount"]}")
 
-    // Convert amount to smallest units (based on decimal places)
-    val inputDecimals = if (fromToken.equals("kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6", ignoreCase = true)) 5 else 6
-    val amountInSmallestUnits = (amount.toDoubleOrNull() ?: 0.0) * Math.pow(10.0, inputDecimals.toDouble())
+        // Step 2: Get swap instructions from Jupiter
+        val instructions = getJupiterSwapInstructions(quoteJson, owner.publicKey)
+        Log.d(tag, "Instructions obtained successfully")
 
-    // Convert slippage from percent to basis points
-    val slippageBps = ((slippagePercent.toDoubleOrNull() ?: 0.5) * 100.0).toInt()
+        // Step 3: Get Kinetic configuration
+        val appConfig = this.config ?: throw IllegalStateException("App config not initialized")
+        val transactionApi = TransactionApi(basePath = this.endpoint, headers = createHeaders())
+        val blockHash = transactionApi.getLatestBlockhash(this.sdkConfig.environment, this.sdkConfig.index)
+        
+        // Get Kinetic fee payer from app config
+        val kineticFeePayerPublicKey = PublicKey(appConfig.mint.feePayer)
+        
+        Log.d(tag, "Kinetic fee payer: ${kineticFeePayerPublicKey.toBase58()}")
+        Log.d(tag, "User signer: ${owner.publicKey}")
 
-    // Step 1: Get a quote from Jupiter
-    val quoteUrl = "https://api.jup.ag/swap/v1/quote" +
-            "?inputMint=$fromToken" +
-            "&outputMint=$toToken" +
-            "&amount=${amountInSmallestUnits.toLong()}" +
-            "&slippageBps=$slippageBps" +
-            "&restrictIntermediateTokens=true" +
-            (if (simplifyRoutes) "&onlyDirectRoutes=true" else "") +
-            "&maxAccounts=${maxRouteHops * 5}" +
-            "&maxRoutes=5" +
-            "&asLegacyTransaction=$useLegacyTransaction"
+        // Step 4: Build legacy transaction
+        val transaction = Transaction().apply {
+            feePayer = kineticFeePayerPublicKey
+            setRecentBlockHash(blockHash.blockhash)
+        }
 
-    Log.d(tag, "Getting Jupiter quote: $quoteUrl")
-    val quoteRequest = Request.Builder().url(quoteUrl).get().build()
-    val quoteResponse = httpClient.newCall(quoteRequest).execute()
+        // Add instructions in proper order
+        addInstructionsToTransaction(transaction, instructions, tag)
 
-    if (!quoteResponse.isSuccessful) {
-        throw Exception("Failed to get Jupiter quote: ${quoteResponse.message}")
+        // Only user signs the transaction (Kinetic will add its signature)
+        transaction.partialSign(owner.solana)
+
+        Log.d(tag, "Legacy transaction built successfully")
+        Log.d(tag, "Fee payer: ${transaction.feePayer?.toBase58()}")
+        Log.d(tag, "Instructions count: ${transaction.instructions.size}")
+
+        // Step 5: Serialize and submit
+        return submitTransactionToKinetic(transaction, blockHash, appConfig, commitment, transactionApi, tag, false)
+
+    } catch (e: Exception) {
+        Log.e(tag, "Error in legacy approach: ${e.message}", e)
+        throw e
     }
-
-    val quoteJson = quoteResponse.body?.string() ?:
-        throw Exception("Empty response from Jupiter quote API")
-
-    Log.d(tag, "Jupiter quote response received")
-
-    // Step 2: Get swap transaction from Jupiter
-    val swapRequest = JSONObject().apply {
-        put("quoteResponse", JSONObject(quoteJson))
-        put("userPublicKey", owner.publicKey)
-        put("payer", mintFeePayer)  // ✅ Fee payer for SOL transaction fees (Kinetic pays when configured)
-        put("asLegacyTransaction", useLegacyTransaction)
-        put("useSharedAccounts", !useLegacyTransaction)
-        put("dynamicComputeUnitLimit", true)
-        put("skipUserAccountsCheck", false)
-    }
-
-    Log.d(tag, "Requesting Jupiter swap transaction (asLegacyTransaction=$useLegacyTransaction)")
-
-    val requestBody = swapRequest.toString().toRequestBody("application/json".toMediaTypeOrNull())
-    val swapApiRequest = Request.Builder()
-        .url("https://api.jup.ag/swap/v1/swap")
-        .post(requestBody)
-        .header("Content-Type", "application/json")
-        .build()
-
-    val swapResponse = httpClient.newCall(swapApiRequest).execute()
-
-    if (!swapResponse.isSuccessful) {
-        throw Exception("Failed to get Jupiter swap transaction: ${swapResponse.message}")
-    }
-
-    val swapResponseBody = swapResponse.body?.string() ?:
-        throw Exception("Empty response from Jupiter swap API")
-
-    Log.d(tag, "Jupiter swap transaction received")
-
-    // Parse the swap response to get the transaction
-    val swapResult = JSONObject(swapResponseBody)
-    return@withContext swapResult.getString("swapTransaction")
 }
 
 /**
- * Get the appropriate fee payer for transactions
- * Uses Kinetic SDK configuration when available, falls back to owner
- *
- * @param owner The wallet owner as fallback
- * @return Fee payer public key address
+ * Execute Jupiter swap using versioned Transaction class (proper VersionedTransaction approach)
  */
-fun KineticSdk.getFeePayer(owner: Keypair): String {
-    return try {
-        // Try to get fee payer from app config (preferred - Kinetic pays fees)
-        this.config?.mint?.feePayer 
-            ?: this.config?.mints?.firstOrNull()?.feePayer
-            ?: owner.publicKey // Fallback to owner as fee payer
+private suspend fun KineticSdk.executeJupiterSwapVersioned(
+    fromToken: String,
+    toToken: String,
+    amount: String,
+    slippagePercent: String,
+    owner: Keypair,
+    commitment: Commitment?
+): KineticTransaction {
+    val tag = "${TAG}Versioned"
+    Log.d(tag, "Building versioned transaction using VersionedTransaction")
+
+    try {
+        // Step 1: Get quote from Jupiter (same as legacy)
+        val quoteDetails = getJupiterQuote(fromToken, toToken, amount, slippagePercent)
+        val quoteJson = quoteDetails["quoteJson"] ?: throw Exception("Missing quote JSON")
+        
+        Log.d(tag, "Quote obtained - expected output: ${quoteDetails["outputAmount"]}")
+
+        // Step 2: Get swap instructions from Jupiter (same as legacy)
+        val instructions = getJupiterSwapInstructions(quoteJson, owner.publicKey)
+        Log.d(tag, "Instructions obtained successfully")
+
+        // Step 3: Get Kinetic configuration (same as legacy)
+        val appConfig = this.config ?: throw IllegalStateException("App config not initialized")
+        val transactionApi = TransactionApi(basePath = this.endpoint, headers = createHeaders())
+        val blockHash = transactionApi.getLatestBlockhash(this.sdkConfig.environment, this.sdkConfig.index)
+        
+        // Get Kinetic fee payer from app config (same as legacy)
+        val kineticFeePayerPublicKey = PublicKey(appConfig.mint.feePayer)
+        
+        Log.d(tag, "Kinetic fee payer: ${kineticFeePayerPublicKey.toBase58()}")
+        Log.d(tag, "User signer: ${owner.publicKey}")
+
+        // Step 4: Handle Address Lookup Tables (from your original approach)
+        val addressLookupTableAccounts = if (instructions.has("addressLookupTableAddresses")) {
+            val altAddresses = instructions.getJSONArray("addressLookupTableAddresses")
+            val altList = mutableListOf<String>()
+            for (i in 0 until altAddresses.length()) {
+                altList.add(altAddresses.getString(i))
+            }
+            
+            if (altList.isNotEmpty()) {
+                Log.d(tag, "Jupiter provided ${altList.size} ALT addresses")
+                try {
+                    // Simple approach: Jupiter provides ALT addresses, Kinetic resolves them
+                    val appKey = "app-${this.sdkConfig.index}-${this.sdkConfig.environment}"
+                    // TODO: Implement proper ALT resolution when method is available
+                    // this.getAddressLookupTableAccounts(appKey, altList)
+                    emptyList<String>() // For now, fallback to empty list
+                } catch (e: Exception) {
+                    Log.w(tag, "ALT resolution failed, proceeding without ALTs: ${e.message}")
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+
+        // Step 5: Build all instructions (same as legacy)
+        val allInstructions = mutableListOf<TransactionInstruction>()
+        
+        // Add instructions in same order as successful legacy transaction
+        if (instructions.has("computeBudgetInstructions")) {
+            val computeBudgetArray = instructions.getJSONArray("computeBudgetInstructions")
+            for (i in 0 until computeBudgetArray.length()) {
+                val instruction = convertJupiterInstructionToSolana(computeBudgetArray.getJSONObject(i))
+                allInstructions.add(instruction)
+            }
+            Log.d(tag, "Added ${computeBudgetArray.length()} compute budget instructions")
+        }
+
+        if (instructions.has("setupInstructions")) {
+            val setupArray = instructions.getJSONArray("setupInstructions")
+            for (i in 0 until setupArray.length()) {
+                val instruction = convertJupiterInstructionToSolana(setupArray.getJSONObject(i))
+                allInstructions.add(instruction)
+            }
+            Log.d(tag, "Added ${setupArray.length()} setup instructions")
+        }
+
+        if (instructions.has("tokenLedgerInstruction") && !instructions.isNull("tokenLedgerInstruction")) {
+            val instruction = convertJupiterInstructionToSolana(instructions.getJSONObject("tokenLedgerInstruction"))
+            allInstructions.add(instruction)
+            Log.d(tag, "Added token ledger instruction")
+        }
+
+        val swapInstruction = convertJupiterInstructionToSolana(instructions.getJSONObject("swapInstruction"))
+        allInstructions.add(swapInstruction)
+        Log.d(tag, "Added main swap instruction")
+
+        if (instructions.has("cleanupInstruction") && !instructions.isNull("cleanupInstruction")) {
+            val instruction = convertJupiterInstructionToSolana(instructions.getJSONObject("cleanupInstruction"))
+            allInstructions.add(instruction)
+            Log.d(tag, "Added cleanup instruction")
+        }
+
+        // Step 6: Build versioned transaction message (from your original approach)
+        val messageV0 = if (addressLookupTableAccounts.isNotEmpty()) {
+            // V0 message with ALTs
+            Log.d(tag, "Building V0 message with ${addressLookupTableAccounts.size} ALT addresses")
+            TransactionMessage.newMessage(
+                kineticFeePayerPublicKey,
+                blockHash.blockhash,
+                allInstructions.toTypedArray()
+            ).compileToV0Message(addressLookupTableAccounts.toTypedArray())
+        } else {
+            // Simple V0 message without ALTs (should work like legacy for now)
+            Log.d(tag, "Building V0 message without ALTs (mirroring legacy success)")
+            TransactionMessage.newMessage(
+                kineticFeePayerPublicKey,
+                blockHash.blockhash,
+                allInstructions.toTypedArray()
+            ).compileToV0Message()
+        }
+
+        val versionedTransaction = VersionedTransaction(messageV0)
+        
+        // Sign with user keypair using proper versioned transaction signing
+        versionedTransaction.partialSign(owner.solana)
+
+        Log.d(tag, "Versioned transaction built successfully")
+        Log.d(tag, "Fee payer: ${kineticFeePayerPublicKey.toBase58()}")
+        Log.d(tag, "Instructions count: ${allInstructions.size}")
+
+        // Step 7: Serialize with versioned format
+        val serializedTransaction = versionedTransaction.serialize()
+        val transactionBase64 = Base64.encodeToString(serializedTransaction, Base64.NO_WRAP)
+
+        Log.d(tag, "Transaction serialized, length: ${transactionBase64.length}")
+
+        // Step 8: Submit as versioned transaction
+        val makeTransferRequest = MakeTransferRequest(
+            commitment = commitment ?: this.sdkConfig.commitment ?: Commitment.confirmed,
+            environment = this.sdkConfig.environment,
+            index = this.sdkConfig.index,
+            mint = appConfig.mint.publicKey,
+            lastValidBlockHeight = blockHash.lastValidBlockHeight,
+            tx = transactionBase64,
+            reference = null,
+            isVersioned = true,  // Mark as versioned
+            asLegacy = false,
+            addressLookupTableAccounts = if (addressLookupTableAccounts.isNotEmpty()) {
+                addressLookupTableAccounts
+            } else null
+        )
+
+        val result = transactionApi.makeTransfer(makeTransferRequest)
+
+        Log.d(tag, "=== VERSIONED SWAP COMPLETED ===")
+        Log.d(tag, "✓ Signature: ${result.signature}")
+        Log.d(tag, "✓ Transaction type: Versioned (V0 message${if (addressLookupTableAccounts.isNotEmpty()) " with ${addressLookupTableAccounts.size} ALTs" else ", no ALTs"})")
+        Log.d(tag, "✓ Fee payer: Kinetic (user paid no SOL fees)")
+        Log.d(tag, "✓ Instructions count: ${allInstructions.size}")
+        Log.d(tag, "✓ ALT addresses: ${if (addressLookupTableAccounts.isNotEmpty()) addressLookupTableAccounts.size else "none"}")
+
+        return result
+
     } catch (e: Exception) {
-        Log.w("KineticExt", "Could not get fee payer from config, using owner: ${e.message}")
-        owner.publicKey // Safe fallback
+        Log.e(tag, "Error in versioned approach: ${e.message}", e)
+        throw e
+    }
+}
+
+/**
+ * Get quote from Jupiter v6 API
+ */
+private suspend fun getJupiterQuote(
+    fromToken: String,
+    toToken: String,
+    amount: String,
+    slippagePercent: String
+): Map<String, String> = withContext(Dispatchers.IO) {
+    
+    // Resolve token addresses if they're symbols
+    val inputMint = resolveTokenAddress(fromToken)
+    val outputMint = resolveTokenAddress(toToken)
+    
+    // Convert amount to smallest units
+    val inputDecimals = getTokenDecimals(inputMint)
+    val amountInSmallestUnits = (amount.toDoubleOrNull() ?: 0.0) * Math.pow(10.0, inputDecimals.toDouble())
+    val slippageBps = ((slippagePercent.toDoubleOrNull() ?: 0.5) * 100.0).toInt()
+
+    val url = "https://quote-api.jup.ag/v6/quote" +
+            "?inputMint=$inputMint" +
+            "&outputMint=$outputMint" +
+            "&amount=${amountInSmallestUnits.toLong()}" +
+            "&slippageBps=$slippageBps" +
+            "&restrictIntermediateTokens=true"
+
+    Log.d(TAG, "Jupiter quote URL: $url")
+
+    val request = Request.Builder().url(url).get().build()
+    
+    jupiterHttpClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) {
+            throw Exception("Failed to get Jupiter quote: ${response.code} - ${response.message}")
+        }
+
+        val responseBody = response.body?.string() ?: 
+            throw Exception("Empty response from Jupiter quote API")
+
+        // Calculate output for display
+        val quoteResponse = JSONObject(responseBody)
+        val outputDecimals = getTokenDecimals(outputMint)
+        val outputAmount = quoteResponse.getString("outAmount").toLongOrNull() ?: 0L
+        val formattedOutputAmount = (outputAmount.toDouble() / Math.pow(10.0, outputDecimals.toDouble())).toString()
+
+        Log.d(TAG, "Quote successful - input: $amount, output: $formattedOutputAmount")
+
+        mapOf(
+            "quoteJson" to responseBody,
+            "outputAmount" to formattedOutputAmount
+        )
+    }
+}
+
+/**
+ * Get swap instructions from Jupiter v6 API (the successful approach)
+ */
+private suspend fun getJupiterSwapInstructions(
+    quoteJson: String,
+    userPublicKey: String
+): JSONObject = withContext(Dispatchers.IO) {
+    
+    val requestBody = JSONObject().apply {
+        put("quoteResponse", JSONObject(quoteJson))
+        put("userPublicKey", userPublicKey)
+        put("wrapAndUnwrapSol", true)
+        put("useTokenLedger", false)
+        // Don't specify feeAccount - let Jupiter handle it
+    }
+
+    Log.d(TAG, "Requesting swap instructions from Jupiter v6")
+
+    val request = Request.Builder()
+        .url("https://quote-api.jup.ag/v6/swap-instructions")
+        .post(requestBody.toString().toRequestBody("application/json".toMediaTypeOrNull()))
+        .header("Content-Type", "application/json")
+        .build()
+
+    jupiterHttpClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) {
+            throw Exception("Failed to get swap instructions: ${response.code} - ${response.message}")
+        }
+
+        val responseBody = response.body?.string() ?: 
+            throw Exception("Empty response from Jupiter instructions API")
+
+        val instructionsResponse = JSONObject(responseBody)
+        
+        // Check for error in response
+        if (instructionsResponse.has("error") && !instructionsResponse.isNull("error")) {
+            throw Exception("Jupiter instructions error: ${instructionsResponse.getString("error")}")
+        }
+
+        Log.d(TAG, "Swap instructions obtained successfully")
+        
+        instructionsResponse
+    }
+}
+
+/**
+ * Add instructions to legacy transaction in proper order
+ */
+private fun addInstructionsToTransaction(
+    transaction: Transaction,
+    instructions: JSONObject,
+    tag: String
+) {
+    // Add compute budget instructions
+    if (instructions.has("computeBudgetInstructions")) {
+        val computeBudgetArray = instructions.getJSONArray("computeBudgetInstructions")
+        for (i in 0 until computeBudgetArray.length()) {
+            val instruction = convertJupiterInstructionToSolana(computeBudgetArray.getJSONObject(i))
+            transaction.add(instruction)
+        }
+        Log.d(tag, "Added ${computeBudgetArray.length()} compute budget instructions")
+    }
+
+    // Add setup instructions
+    if (instructions.has("setupInstructions")) {
+        val setupArray = instructions.getJSONArray("setupInstructions")
+        for (i in 0 until setupArray.length()) {
+            val instruction = convertJupiterInstructionToSolana(setupArray.getJSONObject(i))
+            transaction.add(instruction)
+        }
+        Log.d(tag, "Added ${setupArray.length()} setup instructions")
+    }
+
+    // Add token ledger instruction if present
+    if (instructions.has("tokenLedgerInstruction") && !instructions.isNull("tokenLedgerInstruction")) {
+        val instruction = convertJupiterInstructionToSolana(instructions.getJSONObject("tokenLedgerInstruction"))
+        transaction.add(instruction)
+        Log.d(tag, "Added token ledger instruction")
+    }
+
+    // Add main swap instruction
+    val swapInstruction = convertJupiterInstructionToSolana(instructions.getJSONObject("swapInstruction"))
+    transaction.add(swapInstruction)
+    Log.d(tag, "Added main swap instruction")
+
+    // Add cleanup instruction if present
+    if (instructions.has("cleanupInstruction") && !instructions.isNull("cleanupInstruction")) {
+        val instruction = convertJupiterInstructionToSolana(instructions.getJSONObject("cleanupInstruction"))
+        transaction.add(instruction)
+        Log.d(tag, "Added cleanup instruction")
+    }
+}
+
+/**
+ * Convert Jupiter instruction JSON to Solana TransactionInstruction
+ */
+private fun convertJupiterInstructionToSolana(jupiterInstruction: JSONObject): TransactionInstruction {
+    val programId = PublicKey(jupiterInstruction.getString("programId"))
+    
+    val accountsArray = jupiterInstruction.getJSONArray("accounts")
+    val accountMetas = mutableListOf<AccountMeta>()
+    
+    for (i in 0 until accountsArray.length()) {
+        val account = accountsArray.getJSONObject(i)
+        val pubkey = PublicKey(account.getString("pubkey"))
+        val isSigner = account.getBoolean("isSigner")
+        val isWritable = account.getBoolean("isWritable")
+        
+        accountMetas.add(AccountMeta(pubkey, isSigner, isWritable))
+    }
+    
+    val data = Base64.decode(jupiterInstruction.getString("data"), Base64.DEFAULT)
+    
+    return TransactionInstruction(programId, accountMetas, data)
+}
+
+/**
+ * Submit transaction to Kinetic (shared by both legacy and versioned)
+ */
+private suspend fun submitTransactionToKinetic(
+    transaction: Transaction,
+    blockHash: org.kin.kinetic.generated.api.model.LatestBlockhashResponse,
+    appConfig: org.kin.kinetic.generated.api.model.AppConfig,
+    commitment: Commitment?,
+    transactionApi: TransactionApi,
+    tag: String,
+    isVersioned: Boolean
+): KineticTransaction {
+    
+    // Serialize the transaction
+    val serializedTransaction = transaction.serialize(
+        SerializeConfig(
+            requireAllSignatures = false, // Kinetic will add its signature
+            verifySignatures = false
+        )
+    )
+    val transactionBase64 = Base64.encodeToString(serializedTransaction, Base64.NO_WRAP)
+    
+    Log.d(tag, "Transaction serialized, length: ${transactionBase64.length}")
+
+    // Submit to Kinetic
+    val makeTransferRequest = MakeTransferRequest(
+        commitment = commitment ?: Commitment.confirmed,
+        environment = "", // Will be set by headers
+        index = 0, // Will be set by headers  
+        mint = appConfig.mint.publicKey,
+        lastValidBlockHeight = blockHash.lastValidBlockHeight,
+        tx = transactionBase64,
+        reference = null,
+        isVersioned = isVersioned,
+        asLegacy = !isVersioned
+    )
+
+    val result = transactionApi.makeTransfer(makeTransferRequest)
+
+    Log.d(tag, "=== SWAP COMPLETED ===")
+    Log.d(tag, "✓ Signature: ${result.signature}")
+    Log.d(tag, "✓ Fee payer: Kinetic (user paid no SOL fees)")
+    Log.d(tag, "✓ Transaction type: ${if (isVersioned) "Versioned" else "Legacy"}")
+
+    return result
+}
+
+/**
+ * Create API headers for KineticSDK
+ */
+private fun KineticSdk.createHeaders(): Map<String, String> {
+    return mapOf(
+        "kinetic-environment" to this.sdkConfig.environment,
+        "kinetic-index" to this.sdkConfig.index.toString(),
+        "kinetic-user-agent" to "KineticSDK-JupiterV6"
+    ) + this.sdkConfig.headers
+}
+
+/**
+ * Resolve a token identifier to its mint address
+ */
+private fun resolveTokenAddress(token: String): String {
+    // If it looks like an address already, return it
+    if (token.length > 30) {
+        return token
+    }
+
+    // Try to resolve from common tokens
+    val commonTokens = mapOf(
+        "KIN" to "kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6",
+        "USDC" to "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "SOL" to "So11111111111111111111111111111111111111112",
+        "USDT" to "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+    )
+    
+    return commonTokens[token.uppercase()] ?: token
+}
+
+/**
+ * Get token decimals (defaults based on common tokens)
+ */
+private fun getTokenDecimals(mintAddress: String): Int {
+    return when (mintAddress) {
+        "kinXdEcpDQeHPEuQnqmUgtYykqKGVFq6CeVX5iAHJq6" -> 5 // KIN
+        "So11111111111111111111111111111111111111112" -> 9 // SOL
+        else -> 6 // Most SPL tokens use 6 decimals (USDC, USDT, etc.)
     }
 }
 
 /**
  * Check if a transaction has been confirmed
- *
- * @param signature Transaction signature to check
- * @param commitment Commitment level to check
- * @return true if transaction is confirmed or finalized
  */
 suspend fun KineticSdk.isTransactionConfirmed(
     signature: String,
@@ -287,25 +577,16 @@ suspend fun KineticSdk.isTransactionConfirmed(
     return try {
         val response = this.getTransaction(signature, commitment)
         val status = response.status.confirmationStatus
-
         status == ConfirmationStatus.confirmed ||
                 status == ConfirmationStatus.finalized
     } catch (e: Exception) {
-        // If there's an error checking, return false
         false
     }
 }
 
 /**
  * Wait for a transaction to be confirmed, with timeout
- *
- * @param signature Transaction signature to check
- * @param commitment Commitment level to check
- * @param maxAttempts Maximum number of attempts to check
- * @param delayMs Delay between attempts in milliseconds
- * @return true if transaction is confirmed within the timeout
  */
- //dummy edit to restart jitpack
 suspend fun KineticSdk.waitForTransactionConfirmation(
     signature: String,
     commitment: Commitment? = null,
@@ -313,15 +594,33 @@ suspend fun KineticSdk.waitForTransactionConfirmation(
     delayMs: Long = 1500
 ): Boolean {
     var attempts = 0
-
     while (attempts < maxAttempts) {
         if (isTransactionConfirmed(signature, commitment)) {
             return true
         }
-
-        kotlinx.coroutines.delay(delayMs)
+        delay(delayMs)
         attempts++
     }
-
     return false
+}
+
+/**
+ * Legacy method for backward compatibility - uses the proven working approach
+ */
+suspend fun KineticSdk.submitSerializedTransaction(
+    serializedTransaction: String,
+    owner: Keypair,
+    commitment: Commitment? = null,
+    addSignature: Boolean = true
+): KineticTransaction {
+    Log.d(TAG, "Using legacy submitSerializedTransaction method")
+    
+    // Use the existing submitPreBuiltTransaction method with legacy settings
+    return this.submitPreBuiltTransaction(
+        serializedTransaction = serializedTransaction,
+        owner = owner,
+        commitment = commitment,
+        asLegacy = true,
+        isVersioned = false
+    )
 }
