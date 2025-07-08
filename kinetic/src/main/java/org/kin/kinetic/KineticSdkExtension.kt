@@ -13,9 +13,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.kin.kinetic.generated.api.TransactionApi
 import org.kin.kinetic.generated.api.model.Commitment
-import org.kin.kinetic.generated.api.model.ConfirmationStatus
 import org.kin.kinetic.generated.api.model.MakeTransferRequest
 import org.kin.kinetic.generated.api.model.Transaction as KineticTransaction
+import org.kin.kinetic.generated.api.model.ConfirmationStatus as KineticConfirmationStatus
 import org.kin.kinetic.generated.api.model.ConfirmationStatus
 import java.util.concurrent.TimeUnit
 
@@ -111,7 +111,7 @@ private suspend fun KineticSdk.executeJupiterSwapLegacy(
         val blockHash = transactionApi.getLatestBlockhash(this.sdkConfig.environment, this.sdkConfig.index)
         
         // Get Kinetic fee payer from app config
-        val kineticFeePayerPublicKey = PublicKey(appConfig.mint.feePayer)
+        val kineticFeePayerPublicKey = com.solana.core.PublicKey(appConfig.mint.feePayer)
         
         Log.d(tag, "Kinetic fee payer: ${kineticFeePayerPublicKey.toBase58()}")
         Log.d(tag, "User signer: ${owner.publicKey}")
@@ -133,7 +133,7 @@ private suspend fun KineticSdk.executeJupiterSwapLegacy(
         Log.d(tag, "Instructions count: ${transaction.instructions.size}")
 
         // Step 5: Serialize and submit
-        return submitTransactionToKinetic(transaction, blockHash, appConfig, commitment, transactionApi, tag, false)
+        return submitTransactionToKinetic(transaction, blockHash, appConfig, commitment, transactionApi, tag, isVersioned = false)
 
     } catch (e: Exception) {
         Log.e(tag, "Error in legacy approach: ${e.message}", e)
@@ -142,7 +142,8 @@ private suspend fun KineticSdk.executeJupiterSwapLegacy(
 }
 
 /**
- * Execute Jupiter swap using versioned Transaction class (proper VersionedTransaction approach)
+ * Execute Jupiter swap using versioned Transaction approach
+ * Uses Transaction class with versioned flags for maximum compatibility
  */
 private suspend fun KineticSdk.executeJupiterSwapVersioned(
     fromToken: String,
@@ -153,7 +154,7 @@ private suspend fun KineticSdk.executeJupiterSwapVersioned(
     commitment: Commitment?
 ): KineticTransaction {
     val tag = "${TAG}Versioned"
-    Log.d(tag, "Building versioned transaction using VersionedTransaction")
+    Log.d(tag, "Building versioned transaction using Transaction class with versioned flags")
 
     try {
         // Step 1: Get quote from Jupiter (same as legacy)
@@ -172,12 +173,12 @@ private suspend fun KineticSdk.executeJupiterSwapVersioned(
         val blockHash = transactionApi.getLatestBlockhash(this.sdkConfig.environment, this.sdkConfig.index)
         
         // Get Kinetic fee payer from app config (same as legacy)
-        val kineticFeePayerPublicKey = PublicKey(appConfig.mint.feePayer)
+        val kineticFeePayerPublicKey = com.solana.core.PublicKey(appConfig.mint.feePayer)
         
         Log.d(tag, "Kinetic fee payer: ${kineticFeePayerPublicKey.toBase58()}")
         Log.d(tag, "User signer: ${owner.publicKey}")
 
-        // Step 4: Handle Address Lookup Tables (from your original approach)
+        // Step 4: Handle Address Lookup Tables (extract for versioned transaction)
         val addressLookupTableAccounts = if (instructions.has("addressLookupTableAddresses")) {
             val altAddresses = instructions.getJSONArray("addressLookupTableAddresses")
             val altList = mutableListOf<String>()
@@ -186,17 +187,8 @@ private suspend fun KineticSdk.executeJupiterSwapVersioned(
             }
             
             if (altList.isNotEmpty()) {
-                Log.d(tag, "Jupiter provided ${altList.size} ALT addresses")
-                try {
-                    // Simple approach: Jupiter provides ALT addresses, Kinetic resolves them
-                    val appKey = "app-${this.sdkConfig.index}-${this.sdkConfig.environment}"
-                    // TODO: Implement proper ALT resolution when method is available
-                    // this.getAddressLookupTableAccounts(appKey, altList)
-                    emptyList<String>() // For now, fallback to empty list
-                } catch (e: Exception) {
-                    Log.w(tag, "ALT resolution failed, proceeding without ALTs: ${e.message}")
-                    emptyList()
-                }
+                Log.d(tag, "Jupiter provided ${altList.size} ALT addresses for versioned transaction")
+                altList
             } else {
                 emptyList()
             }
@@ -204,79 +196,35 @@ private suspend fun KineticSdk.executeJupiterSwapVersioned(
             emptyList()
         }
 
-        // Step 5: Build all instructions (same as legacy)
-        val allInstructions = mutableListOf<TransactionInstruction>()
-        
-        // Add instructions in same order as successful legacy transaction
-        if (instructions.has("computeBudgetInstructions")) {
-            val computeBudgetArray = instructions.getJSONArray("computeBudgetInstructions")
-            for (i in 0 until computeBudgetArray.length()) {
-                val instruction = convertJupiterInstructionToSolana(computeBudgetArray.getJSONObject(i))
-                allInstructions.add(instruction)
-            }
-            Log.d(tag, "Added ${computeBudgetArray.length()} compute budget instructions")
+        // Step 5: Build transaction using same Transaction class as legacy but with versioned intent
+        val transaction = Transaction().apply {
+            feePayer = kineticFeePayerPublicKey
+            setRecentBlockHash(blockHash.blockhash)
         }
 
-        if (instructions.has("setupInstructions")) {
-            val setupArray = instructions.getJSONArray("setupInstructions")
-            for (i in 0 until setupArray.length()) {
-                val instruction = convertJupiterInstructionToSolana(setupArray.getJSONObject(i))
-                allInstructions.add(instruction)
-            }
-            Log.d(tag, "Added ${setupArray.length()} setup instructions")
-        }
+        // Add instructions in proper order (same as legacy)
+        addInstructionsToTransaction(transaction, instructions, tag)
 
-        if (instructions.has("tokenLedgerInstruction") && !instructions.isNull("tokenLedgerInstruction")) {
-            val instruction = convertJupiterInstructionToSolana(instructions.getJSONObject("tokenLedgerInstruction"))
-            allInstructions.add(instruction)
-            Log.d(tag, "Added token ledger instruction")
-        }
+        // Only user signs the transaction (Kinetic will add its signature)
+        transaction.partialSign(owner.solana)
 
-        val swapInstruction = convertJupiterInstructionToSolana(instructions.getJSONObject("swapInstruction"))
-        allInstructions.add(swapInstruction)
-        Log.d(tag, "Added main swap instruction")
+        Log.d(tag, "Versioned-style transaction built successfully using Transaction class")
+        Log.d(tag, "Fee payer: ${transaction.feePayer?.toBase58()}")
+        Log.d(tag, "Instructions count: ${transaction.instructions.size}")
+        Log.d(tag, "ALT addresses to pass: ${addressLookupTableAccounts.size}")
 
-        if (instructions.has("cleanupInstruction") && !instructions.isNull("cleanupInstruction")) {
-            val instruction = convertJupiterInstructionToSolana(instructions.getJSONObject("cleanupInstruction"))
-            allInstructions.add(instruction)
-            Log.d(tag, "Added cleanup instruction")
-        }
-
-        // Step 6: Build versioned transaction message (from your original approach)
-        val messageV0 = if (addressLookupTableAccounts.isNotEmpty()) {
-            // V0 message with ALTs
-            Log.d(tag, "Building V0 message with ${addressLookupTableAccounts.size} ALT addresses")
-            TransactionMessage.newMessage(
-                kineticFeePayerPublicKey,
-                blockHash.blockhash,
-                allInstructions.toTypedArray()
-            ).compileToV0Message(addressLookupTableAccounts.toTypedArray())
-        } else {
-            // Simple V0 message without ALTs (should work like legacy for now)
-            Log.d(tag, "Building V0 message without ALTs (mirroring legacy success)")
-            TransactionMessage.newMessage(
-                kineticFeePayerPublicKey,
-                blockHash.blockhash,
-                allInstructions.toTypedArray()
-            ).compileToV0Message()
-        }
-
-        val versionedTransaction = VersionedTransaction(messageV0)
-        
-        // Sign with user keypair using proper versioned transaction signing
-        versionedTransaction.partialSign(owner.solana)
-
-        Log.d(tag, "Versioned transaction built successfully")
-        Log.d(tag, "Fee payer: ${kineticFeePayerPublicKey.toBase58()}")
-        Log.d(tag, "Instructions count: ${allInstructions.size}")
-
-        // Step 7: Serialize with versioned format
-        val serializedTransaction = versionedTransaction.serialize()
+        // Step 6: Serialize the transaction
+        val serializedTransaction = transaction.serialize(
+            SerializeConfig(
+                requireAllSignatures = false, // Kinetic will add its signature
+                verifySignatures = false
+            )
+        )
         val transactionBase64 = Base64.encodeToString(serializedTransaction, Base64.NO_WRAP)
 
         Log.d(tag, "Transaction serialized, length: ${transactionBase64.length}")
 
-        // Step 8: Submit as versioned transaction
+        // Step 7: Submit as versioned transaction (key difference from legacy)
         val makeTransferRequest = MakeTransferRequest(
             commitment = commitment ?: this.sdkConfig.commitment ?: Commitment.confirmed,
             environment = this.sdkConfig.environment,
@@ -285,7 +233,7 @@ private suspend fun KineticSdk.executeJupiterSwapVersioned(
             lastValidBlockHeight = blockHash.lastValidBlockHeight,
             tx = transactionBase64,
             reference = null,
-            isVersioned = true,  // Mark as versioned
+            isVersioned = true,  // THIS IS THE KEY DIFFERENCE - tells Kinetic to treat as versioned
             asLegacy = false,
             addressLookupTableAccounts = if (addressLookupTableAccounts.isNotEmpty()) {
                 addressLookupTableAccounts
@@ -296,9 +244,9 @@ private suspend fun KineticSdk.executeJupiterSwapVersioned(
 
         Log.d(tag, "=== VERSIONED SWAP COMPLETED ===")
         Log.d(tag, "✓ Signature: ${result.signature}")
-        Log.d(tag, "✓ Transaction type: Versioned (V0 message${if (addressLookupTableAccounts.isNotEmpty()) " with ${addressLookupTableAccounts.size} ALTs" else ", no ALTs"})")
+        Log.d(tag, "✓ Transaction type: Versioned (isVersioned=true)")
         Log.d(tag, "✓ Fee payer: Kinetic (user paid no SOL fees)")
-        Log.d(tag, "✓ Instructions count: ${allInstructions.size}")
+        Log.d(tag, "✓ Instructions count: ${transaction.instructions.size}")
         Log.d(tag, "✓ ALT addresses: ${if (addressLookupTableAccounts.isNotEmpty()) addressLookupTableAccounts.size else "none"}")
 
         return result
@@ -459,14 +407,14 @@ private fun addInstructionsToTransaction(
  * Convert Jupiter instruction JSON to Solana TransactionInstruction
  */
 private fun convertJupiterInstructionToSolana(jupiterInstruction: JSONObject): TransactionInstruction {
-    val programId = PublicKey(jupiterInstruction.getString("programId"))
+    val programId = com.solana.core.PublicKey(jupiterInstruction.getString("programId"))
     
     val accountsArray = jupiterInstruction.getJSONArray("accounts")
     val accountMetas = mutableListOf<AccountMeta>()
     
     for (i in 0 until accountsArray.length()) {
         val account = accountsArray.getJSONObject(i)
-        val pubkey = PublicKey(account.getString("pubkey"))
+        val pubkey = com.solana.core.PublicKey(account.getString("pubkey"))
         val isSigner = account.getBoolean("isSigner")
         val isWritable = account.getBoolean("isWritable")
         
@@ -577,8 +525,8 @@ suspend fun KineticSdk.isTransactionConfirmed(
     return try {
         val response = this.getTransaction(signature, commitment)
         val status = response.status.confirmationStatus
-        status == ConfirmationStatus.confirmed ||
-                status == ConfirmationStatus.finalized
+        status == KineticConfirmationStatus.confirmed ||
+                status == KineticConfirmationStatus.finalized
     } catch (e: Exception) {
         false
     }
