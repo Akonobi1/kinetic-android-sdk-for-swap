@@ -1,9 +1,10 @@
 plugins {
     id 'com.android.library'
     id 'kotlin-android'
+    id 'org.jetbrains.kotlin.plugin.serialization'
     id "org.openapi.generator" version "6.2.1"
     id 'maven-publish'
-    id 'de.undercouch.download'
+    id 'de.undercouch.download' version '5.4.0'
 }
 
 ext {
@@ -34,11 +35,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_17  // Change from 11 to 17
+        targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = '11'
+        jvmTarget = '17'
     }
 
     publishing {
@@ -51,6 +52,7 @@ android {
 dependencies {
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    implementation 'io.github.funkatronics:multimult:0.2.3'
     //implementation 'org.sol4k:sol4k:0.5.4'
     implementation 'androidx.core:core-ktx:1.9.0'
     implementation 'androidx.appcompat:appcompat:1.5.1'
@@ -69,6 +71,9 @@ dependencies {
     api 'com.github.metaplex-foundation.SolanaKT:solana:786b4a9'
 
     implementation 'com.google.code.gson:gson:2.8.6'
+
+    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
 }
 
 
