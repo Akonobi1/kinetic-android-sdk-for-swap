@@ -1,7 +1,7 @@
 package org.kin.kinetic.solana
 
 import org.kin.kinetic.solana.isOnCurve
-import com.solana.programs.Program
+import org.kin.kinetic.solana.Program
 import kotlin.jvm.JvmStatic
 
 class ProgramDerivedAddress private constructor(bytes: ByteArray, val nonce: UByte) : SolanaPublicKey(bytes) {

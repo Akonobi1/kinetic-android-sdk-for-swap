@@ -19,8 +19,8 @@ data class SolanaTransaction(
 
     companion object {
         const val SIGNATURE_LENGTH_BYTES = 64
-        fun from(bytes: ByteArray) = TransactionFormat.decodeFromByteArray(kotlinx.serialization.serializer<Transaction>(), bytes)
+        fun from(bytes: ByteArray) = TransactionFormat.decodeFromByteArray(kotlinx.serialization.serializer<SolanaTransaction>(), bytes)
     }
 
-    fun serialize(): ByteArray = TransactionFormat.encodeToByteArray(kotlinx.serialization.serializer<Transaction>(), this)
+    fun serialize(): ByteArray = TransactionFormat.encodeToByteArray(kotlinx.serialization.serializer<SolanaTransaction>(), this)
 }
