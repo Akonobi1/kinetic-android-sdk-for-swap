@@ -703,7 +703,8 @@
             "$ref": "#/components/schemas/TransactionErrorType"
           },
           "instruction": {
-            "type": "integer"
+            "type": "integer",
+            "nullable": true
           }
         },
         "required": ["id", "logs", "message", "type", "instruction"]
